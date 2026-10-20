@@ -1,0 +1,12 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "abo",
+  "pages_build_output_dir": "./dist",
+  "compatibility_date": "2026-10-20",
+  "kv_namespaces": [
+    {
+      "binding": "ABO_KV",
+      "id": "0ffc175de3104fdbb93478332fcce946"
+    }
+  ]
+}
