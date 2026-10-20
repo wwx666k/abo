@@ -234,19 +234,27 @@ export default function Result() {
       <div className="mt-6 flex items-center gap-3">
         <button
           type="button"
-          onClick={handleRestart}
+          onClick={() => navigate('/me')}
           className="flex-1 rounded-capsule border border-white/80 bg-white/70 px-4 py-3.5 text-[14px] font-semibold text-ink-700 backdrop-blur"
         >
-          重新检测
+          个人中心
         </button>
         <button
           type="button"
-          onClick={() => navigate('/')}
+          onClick={handleRestart}
           className="flex-1 rounded-capsule bg-gradient-to-r from-brand-violet to-brand-purple px-4 py-3.5 text-[14px] font-bold text-white"
         >
-          返回首页
+          重新测试
         </button>
       </div>
+
+      <button
+        type="button"
+        onClick={() => navigate('/')}
+        className="mt-3 w-full rounded-capsule border border-white/80 bg-white/70 px-4 py-3 text-[13.5px] font-medium text-ink-500 backdrop-blur"
+      >
+        返回首页
+      </button>
     </div>
   );
 }

@@ -94,7 +94,114 @@ check(
   `${first.title} / ${first.populationRate}%`,
 );
 
-/* 5. 随机抽样输出，人工检查观感 */
+/* 5. Cloudflare Functions + KV 存储 */
+type KV = {
+  get: (key: string, type?: 'json') => Promise<unknown>;
+  put: (key: string, value: string) => Promise<void>;
+  list: (options?: { prefix?: string; limit?: number; cursor?: string }) => Promise<{
+    keys: { name: string }[];
+    list_complete: boolean;
+    cursor?: string;
+  }>;
+};
+
+function makeKV(): KV {
+  const store = new Map<string, string>();
+  return {
+    async get(key, type) {
+      const raw = store.get(key);
+      if (raw === undefined) return null;
+      return type === 'json' ? JSON.parse(raw) : raw;
+    },
+    async put(key, value) {
+      store.set(key, value);
+    },
+    async list(options) {
+      const prefix = options?.prefix ?? '';
+      const names = [...store.keys()].filter((name) => name.startsWith(prefix)).sort();
+      return { keys: names.map((name) => ({ name })), list_complete: true };
+    },
+  };
+}
+
+const kv = makeKV();
+const env = { ABO_KV: kv, ADMIN_PASSWORD: 'wwx' };
+
+const userPost = (await import('../functions/api/user')).onRequestPost;
+const userGet = (await import('../functions/api/user')).onRequestGet;
+const adminGet = (await import('../functions/api/admin')).onRequestGet;
+
+const postRecord = (body: unknown) =>
+  userPost({
+    request: new Request('https://example.com/api/user', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }),
+    env,
+  });
+
+const sampleHistory = Array.from({ length: 12 }, (_, i) => ({
+  id: `h${i}`,
+  at: 1_700_000_000_000 + i,
+  result: calculateResult(allD),
+}));
+
+const postRes = await postRecord({
+  username: '测试用户',
+  progress: { answers: { q1: 'A' }, currentIndex: 0 },
+  history: sampleHistory,
+});
+const postJson = (await postRes.json()) as { ok?: boolean; record?: { history: unknown[] } };
+check('KV 写入返回 ok', postJson.ok === true);
+check('KV 历史记录截断为 10 条', postJson.record?.history.length === 10, String(postJson.record?.history.length));
+
+const getRes = await userGet({
+  request: new Request(`https://example.com/api/user?username=${encodeURIComponent('测试用户')}`),
+  env,
+});
+const getJson = (await getRes.json()) as {
+  record?: { username: string; progress: { answers: Record<string, string> } | null };
+};
+check('KV 读取回填用户名', getJson.record?.username === '测试用户', String(getJson.record?.username));
+check('KV 读取保留未完成进度', getJson.record?.progress?.answers?.q1 === 'A');
+
+const missingRes = await userGet({
+  request: new Request('https://example.com/api/user'),
+  env,
+});
+check('缺少用户名返回 400', missingRes.status === 400, String(missingRes.status));
+
+const noKeyRes = await adminGet({ request: new Request('https://example.com/api/admin'), env });
+check('后台无密码返回 401', noKeyRes.status === 401, String(noKeyRes.status));
+
+const wrongKeyRes = await adminGet({
+  request: new Request('https://example.com/api/admin?key=wrong'),
+  env,
+});
+check('后台错误密码返回 401', wrongKeyRes.status === 401, String(wrongKeyRes.status));
+
+const adminRes = await adminGet({
+  request: new Request('https://example.com/api/admin?key=wwx'),
+  env,
+});
+const adminJson = (await adminRes.json()) as {
+  users?: { username: string; answered: number; progress?: unknown }[];
+};
+check('后台密码正确返回数据', adminRes.status === 200 && adminJson.users?.length === 1);
+check(
+  '后台不返回原始选项',
+  Boolean(adminJson.users?.[0]) && adminJson.users?.[0].progress === undefined,
+);
+check('后台返回进行中的题数', adminJson.users?.[0]?.answered === 1, String(adminJson.users?.[0]?.answered));
+
+const noKvRes = await userGet({
+  request: new Request('https://example.com/api/user?username=abc'),
+  env: {},
+});
+check('未绑定 KV 时返回 503', noKvRes.status === 503, String(noKvRes.status));
+
+/* 6. 随机抽样输出，人工检查观感 */
 console.log('\n--- 抽样输出 ---');
 for (let s = 0; s < 4; s += 1) {
   const answers: AnswerMap = {};

@@ -93,3 +93,24 @@ export interface QuizResult {
   band: ScoreBand;
   finishedAt: number;
 }
+
+/** 一次完整的测试记录，仅保留结果，不保留原始选项 */
+export interface HistoryEntry {
+  id: string;
+  at: number;
+  result: QuizResult;
+}
+
+/** 云端 / 本地的用户档案 */
+export interface UserRecord {
+  username: string;
+  updatedAt: number;
+  /** 未完成的答题进度；生成结果后置空 */
+  progress: { answers: AnswerMap; currentIndex: number } | null;
+  history: HistoryEntry[];
+}
+
+/** 后台列表项：只返回结果，不返回原始选项 */
+export interface AdminUser extends UserRecord {
+  answered?: number;
+}
