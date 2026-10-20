@@ -1,0 +1,140 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* 文本色阶 */
+  --ink-900: #322c3a;
+  --ink-700: #554d5f;
+  --ink-500: #7b7286;
+  --ink-400: #a49bab;
+
+  /* 品牌色 */
+  --brand-purple: #a855f7;
+  --brand-violet: #8b5cf6;
+  --brand-pink: #f0abfc;
+  --brand-gold: #e0a63c;
+  --brand-orange: #f97316;
+
+  /* 页面底色 */
+  --page-bg: #fbf2fa;
+
+  /* 结果页主题色（由身份动态覆盖，默认取 Delta 金橙） */
+  --accent: #f59e0b;
+  --accent-soft: rgba(245, 158, 11, 0.22);
+  --accent-deep: #b45309;
+  --title-color: #e39a2a;
+  --badge-color: #a855f7;
+  --badge-border: rgba(168, 85, 247, 0.45);
+  --tag-text: #b45309;
+  --tag-bg: rgba(255, 252, 245, 0.46);
+  --tag-border: rgba(253, 224, 160, 0.9);
+}
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html,
+  body {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    color: var(--ink-900);
+    font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', system-ui,
+      sans-serif;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    background-color: var(--page-bg);
+    overscroll-behavior-y: none;
+  }
+
+  #root {
+    min-height: 100dvh;
+  }
+}
+
+@layer components {
+  /* 淡紫粉色网格渐变背景 */
+  .app-bg {
+    min-height: 100dvh;
+    background-color: #fbf2fa;
+    background-image: linear-gradient(rgba(168, 85, 247, 0.06) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(168, 85, 247, 0.06) 1px, transparent 1px),
+      radial-gradient(900px 520px at 50% -8%, rgba(249, 168, 212, 0.55), transparent 62%),
+      radial-gradient(720px 480px at 4% 98%, rgba(196, 181, 253, 0.5), transparent 60%),
+      radial-gradient(760px 520px at 98% 72%, rgba(251, 207, 232, 0.5), transparent 60%),
+      linear-gradient(165deg, #fdf3fb 0%, #f7ecfa 48%, #fbf1f7 100%);
+    background-size: 34px 34px, 34px 34px, 100% 100%, 100% 100%, 100% 100%, 100% 100%;
+    background-attachment: fixed;
+  }
+
+  /* 白色大圆角卡片 */
+  .card-surface {
+    @apply rounded-card bg-white/95 shadow-card;
+    backdrop-filter: blur(14px);
+  }
+
+  /* 毛玻璃卡片 */
+  .card-glass {
+    background: rgba(255, 255, 255, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(18px) saturate(140%);
+    @apply rounded-card shadow-card;
+  }
+
+  /* 区块标题：左侧一根紫色竖线 */
+  .section-title {
+    @apply flex items-center gap-2 text-[17px] font-bold tracking-wide;
+    color: var(--ink-900);
+  }
+
+  .section-title::before {
+    content: '';
+    display: block;
+    width: 4px;
+    height: 17px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, var(--brand-purple) 0%, var(--brand-violet) 100%);
+  }
+
+  /* 胶囊标签 */
+  .capsule-tag {
+    @apply inline-flex items-center justify-center rounded-capsule px-3 py-[5px] text-[13px] font-medium;
+    background: var(--tag-bg);
+    border: 1px solid var(--tag-border);
+    color: var(--tag-text);
+    backdrop-filter: blur(6px);
+  }
+
+  /* 圆角进度条 */
+  .bar-track {
+    @apply h-[7px] w-full overflow-hidden rounded-capsule;
+    background: #f0edf2;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    background: linear-gradient(100deg, #c4b5fd 0%, #f0abfc 48%, #fda4af 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .safe-bottom {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  }
+}
