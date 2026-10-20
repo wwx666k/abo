@@ -1,17 +1,15 @@
 import {
+  DEFAULT_MODE,
   DIMENSIONS,
   DIMENSION_LABELS,
   OPTION_SCORE,
-  QUESTIONS_PER_DIMENSION,
-  TOTAL_QUESTIONS,
-  questionMap,
+  QUESTIONS_BY_MODE,
+  QUESTION_MAP_BY_MODE,
 } from '@/data/questions';
+import type { QuizMode } from '@/data/questions';
 import { IDENTITY_BY_DIMENSION, IDENTITIES, resolveBand } from '@/data/identities';
 import { hashString, mulberry32, pickMany, pickOne, randomFloat } from '@/utils/random';
 import type { AnswerMap, Dimension, DimensionScore, OptionKey, QuizResult } from '@/types';
-
-const MIN_RAW = QUESTIONS_PER_DIMENSION * 1;
-const MAX_RAW = QUESTIONS_PER_DIMENSION * 4;
 
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
@@ -22,23 +20,31 @@ export function scoreOf(key: OptionKey): number {
   return OPTION_SCORE[key];
 }
 
-/** 已作答数量 */
-export function answeredCount(answers: AnswerMap): number {
-  return Object.keys(answers).length;
+/** 当前试卷下已作答数量（忽略不属于该试卷的历史答案） */
+export function answeredCount(answers: AnswerMap, mode: QuizMode = DEFAULT_MODE): number {
+  const map = QUESTION_MAP_BY_MODE[mode];
+  return Object.keys(answers).filter((id) => Boolean(map[id])).length;
 }
 
-/** 是否已答完全部 100 题 */
-export function isComplete(answers: AnswerMap): boolean {
-  return answeredCount(answers) >= TOTAL_QUESTIONS;
+/** 当前试卷是否已全部作答 */
+export function isComplete(answers: AnswerMap, mode: QuizMode = DEFAULT_MODE): boolean {
+  return QUESTIONS_BY_MODE[mode].every((question) => Boolean(answers[question.id]));
 }
 
-/** 把原始分（20-80）映射为百分制（0-100） */
-export function toPercent(raw: number): number {
-  return clamp(Math.round(((raw - MIN_RAW) / (MAX_RAW - MIN_RAW)) * 100), 0, 100);
+/** 把原始分映射为百分制（0-100），随题量自适应 */
+export function toPercent(raw: number, perDimension: number): number {
+  const min = perDimension;
+  const max = perDimension * 4;
+  return clamp(Math.round(((raw - min) / (max - min)) * 100), 0, 100);
 }
 
 /** 汇总五维得分 */
-export function scoreDimensions(answers: AnswerMap): DimensionScore[] {
+export function scoreDimensions(
+  answers: AnswerMap,
+  mode: QuizMode = DEFAULT_MODE,
+): DimensionScore[] {
+  const map = QUESTION_MAP_BY_MODE[mode];
+  const perDimension = QUESTIONS_BY_MODE[mode].length / DIMENSIONS.length;
   const raw: Record<Dimension, number> = {
     dominance: 0,
     emotion: 0,
@@ -48,7 +54,7 @@ export function scoreDimensions(answers: AnswerMap): DimensionScore[] {
   };
 
   Object.keys(answers).forEach((id) => {
-    const question = questionMap[id];
+    const question = map[id];
     if (!question) return;
     const score = OPTION_SCORE[answers[id]];
     if (typeof score !== 'number') return;
@@ -57,16 +63,16 @@ export function scoreDimensions(answers: AnswerMap): DimensionScore[] {
 
   return DIMENSIONS.map((key) => {
     const value = raw[key];
-    return { key, label: DIMENSION_LABELS[key], score: toPercent(value), raw: value };
+    return { key, label: DIMENSION_LABELS[key], score: toPercent(value, perDimension), raw: value };
   });
 }
 
 /** 由答案生成稳定种子：同一份答案永远得到同一份报告 */
-function buildSeed(answers: AnswerMap): string {
-  return Object.keys(answers)
+function buildSeed(answers: AnswerMap, mode: QuizMode): string {
+  return `${mode}|${Object.keys(answers)
     .sort()
     .map((id) => `${id}:${answers[id]}`)
-    .join('|');
+    .join('|')}`;
 }
 
 /** 按主导维度的分数段 + 种子随机，组合出 5 个标签 */
@@ -89,9 +95,9 @@ function fillTemplate(template: string, ctx: Record<string, string>): string {
 /**
  * 核心算法：答案 -> 五维分数 -> 身份 / 标签 / 信息素 / 人群占比 -> 完整报告
  */
-export function calculateResult(answers: AnswerMap): QuizResult {
-  const dimensions = scoreDimensions(answers);
-  const rng = mulberry32(hashString(buildSeed(answers)));
+export function calculateResult(answers: AnswerMap, mode: QuizMode = DEFAULT_MODE): QuizResult {
+  const dimensions = scoreDimensions(answers, mode);
+  const rng = mulberry32(hashString(buildSeed(answers, mode)));
 
   // 主导维度：分数最高者；同分时按固定维度顺序决胜，保证结果稳定
   const ranked = [...dimensions].sort(
@@ -134,6 +140,7 @@ export function calculateResult(answers: AnswerMap): QuizResult {
     shareSentence: fillTemplate(identity.shareSentence, ctx),
     theme: identity.theme,
     band,
+    mode,
     finishedAt: Date.now(),
   };
 }

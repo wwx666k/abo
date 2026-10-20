@@ -4,6 +4,9 @@ export type OptionKey = 'A' | 'B' | 'C' | 'D';
 
 export type ScoreBand = 'high' | 'mid' | 'low';
 
+/** 题量档位：快速 25 / 常规 50 / 详细 100 */
+export type QuizMode = 'quick' | 'normal' | 'detail';
+
 export interface QuestionOption {
   key: OptionKey;
   text: string;
@@ -28,7 +31,7 @@ export interface DimensionScore {
   label: string;
   /** 百分制 0-100 */
   score: number;
-  /** 原始分，20-80（20 题 × 1~4 分） */
+  /** 原始分，题量 × 1~4 分 */
   raw: number;
 }
 
@@ -91,6 +94,8 @@ export interface QuizResult {
   shareSentence: string;
   theme: IdentityTheme;
   band: ScoreBand;
+  /** 本次使用的题量档位 */
+  mode: QuizMode;
   finishedAt: number;
 }
 
@@ -105,6 +110,8 @@ export interface HistoryEntry {
 export interface UserRecord {
   username: string;
   updatedAt: number;
+  /** 当前题量档位 */
+  mode: QuizMode;
   /** 未完成的答题进度；生成结果后置空 */
   progress: { answers: AnswerMap; currentIndex: number } | null;
   history: HistoryEntry[];

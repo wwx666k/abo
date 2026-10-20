@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { questions, TOTAL_QUESTIONS } from '@/data/questions';
+import { QUESTIONS_BY_MODE } from '@/data/questions';
 import { answeredCount, isComplete } from '@/utils/calculateResult';
 import { saveUser } from '@/utils/api';
 import { useQuizStore } from '@/store/useQuizStore';
@@ -14,6 +14,7 @@ const AUTHOR_ANSWER = 'wwx';
 export default function Quiz() {
   const navigate = useNavigate();
   const username = useQuizStore((state) => state.username);
+  const mode = useQuizStore((state) => state.mode);
   const answers = useQuizStore((state) => state.answers);
   const currentIndex = useQuizStore((state) => state.currentIndex);
   const answer = useQuizStore((state) => state.answer);
@@ -27,11 +28,13 @@ export default function Quiz() {
   const [gateError, setGateError] = useState('');
   const advanceTimer = useRef<number | null>(null);
 
-  const question = questions[currentIndex];
+  const bank = QUESTIONS_BY_MODE[mode];
+  const total = bank.length;
+  const question = bank[currentIndex];
   const selected = question ? answers[question.id] : undefined;
-  const done = answeredCount(answers);
-  const complete = isComplete(answers);
-  const percent = Math.round((done / TOTAL_QUESTIONS) * 100);
+  const done = answeredCount(answers, mode);
+  const complete = isComplete(answers, mode);
+  const percent = Math.round((done / total) * 100);
 
   // 答题进度自动落库（防抖），离开页面时兜底再存一次
   useEffect(() => {
@@ -60,12 +63,12 @@ export default function Quiz() {
 
   const handleSelect = (key: OptionKey) => {
     answer(question.id, key);
-    if (currentIndex >= TOTAL_QUESTIONS - 1) return;
+    if (currentIndex >= total - 1) return;
 
     if (advanceTimer.current) window.clearTimeout(advanceTimer.current);
     advanceTimer.current = window.setTimeout(() => {
       const state = useQuizStore.getState();
-      if (state.currentIndex >= TOTAL_QUESTIONS - 1) return;
+      if (state.currentIndex >= total - 1) return;
       setDirection(1);
       state.setCurrentIndex(state.currentIndex + 1);
     }, 260);
@@ -103,7 +106,7 @@ export default function Quiz() {
         <div className="flex items-center justify-between text-[12px] font-medium tracking-wide text-ink-400">
           <span>
             第 <span className="text-[13px] font-bold text-brand-violet">{currentIndex + 1}</span> /{' '}
-            {TOTAL_QUESTIONS} 题
+            {total} 题
           </span>
           <span>已作答 {done} 题</span>
         </div>
@@ -190,7 +193,7 @@ export default function Quiz() {
           transition={complete ? { duration: 1.6, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.2 }}
           className="flex-1 rounded-capsule bg-gradient-to-r from-brand-violet to-brand-purple px-4 py-3 text-[14.5px] font-bold text-white shadow-[0_14px_28px_-14px_rgba(139,92,246,0.8)] disabled:from-ink-400/40 disabled:to-ink-400/40 disabled:text-white/80 disabled:shadow-none"
         >
-          {complete ? '提交并生成报告' : `还有 ${TOTAL_QUESTIONS - done} 题未作答`}
+          {complete ? '提交并生成报告' : `还有 ${total - done} 题未作答`}
         </motion.button>
       </footer>
 

@@ -1,5 +1,7 @@
-import type { Dimension, OptionKey, Question, QuestionOption } from '@/types';
+import type { Dimension, OptionKey, Question, QuestionOption, QuizMode } from '@/types';
 import { mulberry32, shuffle } from '@/utils/random';
+
+export type { QuizMode };
 
 /**
  * 题库：
@@ -29,8 +31,15 @@ export const DIMENSION_DESC: Record<Dimension, string> = {
 /** 雷达图顶点顺序：支配感(上) → 情绪浓度(右) → 边界感(右下) → 吸引力(左下) → 稳定值(左) */
 export const RADAR_ORDER: Dimension[] = ['dominance', 'emotion', 'boundary', 'attraction', 'stability'];
 
+export const QUIZ_MODES: { key: QuizMode; label: string; perDim: QuestionCountPerDim; total: number }[] = [
+  { key: 'quick', label: '快速', perDim: 5, total: 25 },
+  { key: 'normal', label: '常规', perDim: 10, total: 50 },
+  { key: 'detail', label: '详细', perDim: 20, total: 100 },
+];
+
+export const DEFAULT_MODE: QuizMode = 'detail';
+
 export const QUESTIONS_PER_DIMENSION = 20;
-export const TOTAL_QUESTIONS = QUESTIONS_PER_DIMENSION * DIMENSIONS.length;
 export const OPTION_SCORE: Record<OptionKey, number> = { A: 1, B: 2, C: 3, D: 4 };
 
 interface RawItem {
@@ -550,16 +559,18 @@ function toOptions(texts: [string, string, string, string]): QuestionOption[] {
   return texts.map((text, i) => ({ key: keys[i], text, score: i + 1 }));
 }
 
+export type QuestionCountPerDim = 5 | 10 | 20;
+
 /**
- * 生成 100 道题的试卷。
- * 每个维度从 24 道母题中确定性抽取 20 道，再整体打乱题序。
+ * 生成一份试卷：每个维度从 24 道母题中确定性抽取 `qPerDim` 道，再整体打乱题序。
+ * 同一 qPerDim 下题号与题面恒定，便于跨设备续答。
  */
-export function buildQuestionBank(seed = 20261020): Question[] {
+export function buildQuestionBank(qPerDim: QuestionCountPerDim, seed = 20261020): Question[] {
   const rng = mulberry32(seed);
   const picked: Question[] = [];
 
   DIMENSIONS.forEach((dimension) => {
-    const items = shuffle(POOL[dimension], rng).slice(0, QUESTIONS_PER_DIMENSION);
+    const items = shuffle(POOL[dimension], rng).slice(0, qPerDim);
     items.forEach((item, i) => {
       picked.push({
         id: `${dimension}-${i}`,
@@ -574,13 +585,25 @@ export function buildQuestionBank(seed = 20261020): Question[] {
   return shuffle(picked, rng).map((question, i) => ({ ...question, index: i + 1 }));
 }
 
-/** 默认试卷（构建期固定，保证题号稳定） */
-export const questions: Question[] = buildQuestionBank();
-
-export const questionMap: Record<string, Question> = questions.reduce<Record<string, Question>>(
-  (acc, question) => {
+function indexQuestions(bank: Question[]): Record<string, Question> {
+  return bank.reduce<Record<string, Question>>((acc, question) => {
     acc[question.id] = question;
     return acc;
-  },
-  {},
-);
+  }, {});
+}
+
+export const QUESTIONS_BY_MODE: Record<QuizMode, Question[]> = {
+  quick: buildQuestionBank(5),
+  normal: buildQuestionBank(10),
+  detail: buildQuestionBank(20),
+};
+
+export const QUESTION_MAP_BY_MODE: Record<QuizMode, Record<string, Question>> = {
+  quick: indexQuestions(QUESTIONS_BY_MODE.quick),
+  normal: indexQuestions(QUESTIONS_BY_MODE.normal),
+  detail: indexQuestions(QUESTIONS_BY_MODE.detail),
+};
+
+/** 兼容默认（详细卷）导出 */
+export const questions: Question[] = QUESTIONS_BY_MODE.detail;
+export const questionMap: Record<string, Question> = QUESTION_MAP_BY_MODE.detail;

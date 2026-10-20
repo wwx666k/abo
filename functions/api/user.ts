@@ -49,10 +49,15 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
 
   const history = Array.isArray(body.history) ? body.history.slice(0, MAX_HISTORY) : [];
   const progress = body.progress as { answers?: unknown; currentIndex?: unknown } | null;
+  const mode =
+    body.mode === 'quick' || body.mode === 'normal' || body.mode === 'detail'
+      ? body.mode
+      : 'detail';
 
   const record = {
     username,
     updatedAt: Date.now(),
+    mode,
     progress: progress
       ? {
           answers: progress.answers && typeof progress.answers === 'object' ? progress.answers : {},

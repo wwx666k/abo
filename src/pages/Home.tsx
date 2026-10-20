@@ -1,7 +1,14 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { DIMENSIONS, DIMENSION_DESC, DIMENSION_LABELS, TOTAL_QUESTIONS } from '@/data/questions';
+import {
+  DEFAULT_MODE,
+  DIMENSIONS,
+  DIMENSION_DESC,
+  DIMENSION_LABELS,
+  QUIZ_MODES,
+} from '@/data/questions';
+import type { QuizMode } from '@/types';
 import { answeredCount } from '@/utils/calculateResult';
 import { loadUser } from '@/utils/api';
 import { useQuizStore } from '@/store/useQuizStore';
@@ -17,8 +24,10 @@ const NAME_PATTERN = /^[\w\u4e00-\u9fa5-]{2,16}$/;
 export default function Home() {
   const navigate = useNavigate();
   const username = useQuizStore((state) => state.username);
+  const mode = useQuizStore((state) => state.mode);
   const answers = useQuizStore((state) => state.answers);
   const history = useQuizStore((state) => state.history);
+  const setMode = useQuizStore((state) => state.setMode);
   const hydrate = useQuizStore((state) => state.hydrate);
   const reset = useQuizStore((state) => state.reset);
   const switchUser = useQuizStore((state) => state.switchUser);
@@ -27,8 +36,15 @@ export default function Home() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const done = answeredCount(answers);
+  const done = answeredCount(answers, mode);
   const hasProgress = done > 0;
+  const modeConfig = QUIZ_MODES.find((item) => item.key === mode) ?? QUIZ_MODES[2];
+
+  const handleMode = (next: QuizMode) => {
+    if (next === mode) return;
+    if (hasProgress && !window.confirm('切换题量会清空当前答题进度，确定切换吗？')) return;
+    setMode(next);
+  };
 
   const handleEnter = async () => {
     const name = nameInput.trim();
@@ -42,7 +58,8 @@ export default function Home() {
     hydrate(record);
     setLoading(false);
 
-    const answered = record.progress ? Object.keys(record.progress.answers).length : 0;
+    const recordMode = record.mode ?? DEFAULT_MODE;
+    const answered = record.progress ? answeredCount(record.progress.answers, recordMode) : 0;
     if (answered > 0) navigate('/quiz');
     else if (record.history.length > 0) navigate('/me');
     else {
@@ -52,7 +69,7 @@ export default function Home() {
   };
 
   return (
-    <div className="mx-auto flex min-h-dvh w-full max-w-[500px] flex-col px-5 pb-10 pt-14">
+    <div className="mx-auto flex min-h-dvh w-full max-w-[500px] flex-col px-5 pb-10 pt-12">
       <motion.div
         {...fadeUp}
         transition={{ duration: 0.55, ease: 'easeOut' }}
@@ -60,14 +77,14 @@ export default function Home() {
       >
         <span className="inline-flex items-center gap-1.5 rounded-capsule border border-brand-purple/25 bg-white/60 px-3.5 py-1.5 text-[12px] font-semibold tracking-widest text-brand-violet backdrop-blur">
           <SparkIcon className="h-3.5 w-3.5" />
-          信息素档案 · {TOTAL_QUESTIONS} 题
+          信息素档案 · 自选题量
         </span>
       </motion.div>
 
       <motion.h1
         {...fadeUp}
         transition={{ duration: 0.6, delay: 0.08, ease: 'easeOut' }}
-        className="mt-6 text-center text-[30px] font-black leading-[1.32] tracking-wide text-ink-900"
+        className="mt-5 text-center text-[30px] font-black leading-[1.32] tracking-wide text-ink-900"
       >
         ABO性别身份
         <br />
@@ -77,9 +94,9 @@ export default function Home() {
       <motion.p
         {...fadeUp}
         transition={{ duration: 0.6, delay: 0.16, ease: 'easeOut' }}
-        className="mt-4 text-center text-[13.5px] leading-[1.9] text-ink-500"
+        className="mt-3.5 text-center text-[13.5px] leading-[1.9] text-ink-500"
       >
-        用 {TOTAL_QUESTIONS} 道情境题，解析你的
+        选择题量，解析你的
         <br />
         支配感 · 情绪浓度 · 边界感 · 吸引力 · 稳定值
       </motion.p>
@@ -87,17 +104,64 @@ export default function Home() {
       <motion.div
         {...fadeUp}
         transition={{ duration: 0.6, delay: 0.24, ease: 'easeOut' }}
-        className="card-glass mt-9 p-5"
+        className="mt-6"
       >
-        <div className="flex flex-col gap-4">
+        <p className="mb-2.5 text-center text-[12px] font-medium tracking-wide text-ink-400">
+          题量
+        </p>
+        <div className="grid grid-cols-3 gap-2.5">
+          {QUIZ_MODES.map((item) => {
+            const active = item.key === mode;
+            return (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => handleMode(item.key)}
+                className={`rounded-2xl border px-2 py-3 text-center transition-colors duration-200 ${
+                  active
+                    ? 'border-brand-violet/55 bg-brand-violet/[0.09] shadow-option'
+                    : 'border-black/[0.07] bg-white/80 hover:border-brand-violet/30'
+                }`}
+              >
+                <span
+                  className={`block text-[14.5px] font-bold ${
+                    active ? 'text-brand-violet' : 'text-ink-700'
+                  }`}
+                >
+                  {item.label}
+                </span>
+                <span
+                  className={`mt-0.5 block text-[12px] ${
+                    active ? 'text-brand-violet/80' : 'text-ink-400'
+                  }`}
+                >
+                  {item.total} 题
+                </span>
+              </button>
+            );
+          })}
+        </div>
+        {hasProgress && (
+          <p className="mt-2 text-center text-[11.5px] text-ink-400">
+            切换题量会清空当前进度
+          </p>
+        )}
+      </motion.div>
+
+      <motion.div
+        {...fadeUp}
+        transition={{ duration: 0.6, delay: 0.3, ease: 'easeOut' }}
+        className="card-glass mt-5 p-4"
+      >
+        <div className="flex flex-col gap-3">
           {DIMENSIONS.map((dimension) => (
             <div key={dimension} className="flex items-start gap-3">
               <span className="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-gradient-to-r from-brand-violet to-brand-purple" />
               <div className="flex flex-1 items-baseline justify-between gap-3">
-                <span className="text-[14px] font-semibold text-ink-900">
+                <span className="text-[13.5px] font-semibold text-ink-900">
                   {DIMENSION_LABELS[dimension]}
                 </span>
-                <span className="text-right text-[12px] leading-[1.6] text-ink-400">
+                <span className="text-right text-[11.5px] leading-[1.6] text-ink-400">
                   {DIMENSION_DESC[dimension]}
                 </span>
               </div>
@@ -108,8 +172,8 @@ export default function Home() {
 
       <motion.div
         {...fadeUp}
-        transition={{ duration: 0.6, delay: 0.32, ease: 'easeOut' }}
-        className="mt-8 flex flex-col gap-3"
+        transition={{ duration: 0.6, delay: 0.36, ease: 'easeOut' }}
+        className="mt-6 flex flex-col gap-3"
       >
         {!username ? (
           <form
@@ -135,7 +199,7 @@ export default function Home() {
               disabled={loading}
               className="rounded-capsule bg-gradient-to-r from-brand-violet to-brand-purple px-6 py-4 text-center text-[16px] font-bold text-white shadow-[0_14px_30px_-12px_rgba(139,92,246,0.75)] active:scale-[0.99] disabled:opacity-70"
             >
-              {loading ? '读取中…' : '开始检测'}
+              {loading ? '读取中…' : `开始检测 · ${modeConfig.total} 题`}
             </button>
           </form>
         ) : (
@@ -157,7 +221,9 @@ export default function Home() {
               to="/quiz"
               className="rounded-capsule bg-gradient-to-r from-brand-violet to-brand-purple px-6 py-4 text-center text-[16px] font-bold text-white shadow-[0_14px_30px_-12px_rgba(139,92,246,0.75)] active:scale-[0.99]"
             >
-              {hasProgress ? `继续检测（${done}/${TOTAL_QUESTIONS}）` : '开始检测'}
+              {hasProgress
+                ? `继续检测（${done}/${modeConfig.total}）`
+                : `开始检测 · ${modeConfig.total} 题`}
             </Link>
 
             <Link
@@ -172,10 +238,10 @@ export default function Home() {
 
       <motion.p
         {...fadeUp}
-        transition={{ duration: 0.6, delay: 0.4, ease: 'easeOut' }}
-        className="mt-auto pt-8 text-center text-[11.5px] leading-relaxed text-ink-400"
+        transition={{ duration: 0.6, delay: 0.44, ease: 'easeOut' }}
+        className="mt-auto pt-7 text-center text-[11.5px] leading-relaxed text-ink-400"
       >
-        约 6 分钟 · 无标准答案
+        无标准答案
         <br />
         仅供娱乐与自我观察，不构成心理学诊断
       </motion.p>

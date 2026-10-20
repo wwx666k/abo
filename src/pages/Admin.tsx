@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { fetchAdminUsers } from '@/utils/api';
+import { QUIZ_MODES } from '@/data/questions';
 import type { AdminUser, HistoryEntry } from '@/types';
+
+const modeLabel = (key?: string) => QUIZ_MODES.find((item) => item.key === key)?.label ?? '详细';
 
 function formatTime(ts: number) {
   if (!ts) return '—';
@@ -135,7 +138,8 @@ export default function Admin() {
                       {user.username}
                     </span>
                     <span className="mt-0.5 text-[11.5px] text-ink-400">
-                      更新于 {formatTime(user.updatedAt)} · 已完成 {list.length} 次
+                      {modeLabel(user.mode)} · 更新于 {formatTime(user.updatedAt)} · 已完成{' '}
+                      {list.length} 次
                       {user.answered ? ` · 进行中 ${user.answered} 题` : ''}
                     </span>
                   </span>
@@ -169,7 +173,8 @@ export default function Admin() {
                                 {entry.result.title}
                               </span>
                               <span className="mt-0.5 text-[11px] text-ink-400">
-                                {formatTime(entry.at)} · 占比 {entry.result.populationRate}%
+                                {modeLabel(entry.result.mode)} · {formatTime(entry.at)} · 占比{' '}
+                                {entry.result.populationRate}%
                               </span>
                             </span>
                             <span className="shrink-0 text-[11.5px] text-ink-500">

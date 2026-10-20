@@ -1,4 +1,4 @@
-import type { AdminUser, UserRecord } from '@/types';
+import type { AdminUser, QuizMode, UserRecord } from '@/types';
 
 export const MAX_HISTORY = 10;
 
@@ -6,9 +6,10 @@ const LS_PREFIX = 'abo:user:';
 
 const lsKey = (username: string) => `${LS_PREFIX}${username}`;
 
-export const emptyRecord = (username: string): UserRecord => ({
+export const emptyRecord = (username: string, mode: QuizMode = 'detail'): UserRecord => ({
   username,
   updatedAt: 0,
+  mode,
   progress: null,
   history: [],
 });
@@ -19,7 +20,12 @@ function readLocal(username: string): UserRecord | null {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as UserRecord;
     if (!parsed || typeof parsed !== 'object') return null;
-    return { ...emptyRecord(username), ...parsed, username };
+    return {
+      ...emptyRecord(username),
+      ...parsed,
+      username,
+      mode: parsed.mode ?? 'detail',
+    };
   } catch {
     return null;
   }

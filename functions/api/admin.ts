@@ -21,6 +21,7 @@ const json = (body: unknown, status = 200) =>
 interface StoredRecord {
   username: string;
   updatedAt: number;
+  mode?: string;
   progress: { answers: Record<string, string>; currentIndex: number } | null;
   history: unknown[];
 }
@@ -29,7 +30,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
   const kv = env.ABO_KV;
   if (!kv) return json({ error: 'kv_not_configured' }, 503);
 
-  const expected = env.ADMIN_PASSWORD || 'wwx';
+  const expected = env.ADMIN_PASSWORD || 'Wwx120325@';
   const provided = new URL(request.url).searchParams.get('key') ?? '';
   if (provided !== expected) return json({ error: 'unauthorized' }, 401);
 
@@ -53,6 +54,7 @@ export const onRequestGet = async ({ request, env }: { request: Request; env: En
     .map((record) => ({
       username: record.username,
       updatedAt: record.updatedAt ?? 0,
+      mode: record.mode ?? 'detail',
       answered: record.progress ? Object.keys(record.progress.answers ?? {}).length : 0,
       history: Array.isArray(record.history) ? record.history : [],
     }))

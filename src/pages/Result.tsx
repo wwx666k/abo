@@ -3,6 +3,7 @@ import { Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import RadarChart from '@/components/RadarChart';
 import { AlertIcon, HeartIcon, QuoteIcon, UsersIcon } from '@/components/Icons';
+import { QUIZ_MODES } from '@/data/questions';
 import { useQuizStore } from '@/store/useQuizStore';
 
 interface InfoCardProps {
@@ -109,6 +110,13 @@ export default function Result() {
           </h1>
 
           <div className="mt-3.5 space-y-1.5 text-[13px]">
+            <p className="flex gap-1.5">
+              <span className="shrink-0 text-ink-500">检测题量：</span>
+              <span className="font-semibold text-ink-700">
+                {QUIZ_MODES.find((item) => item.key === result.mode)?.label ?? '详细'} ·{' '}
+                {QUIZ_MODES.find((item) => item.key === result.mode)?.total ?? 100} 题
+              </span>
+            </p>
             <p className="flex gap-1.5">
               <span className="shrink-0 text-ink-500">信息素状态：</span>
               <span className="font-semibold text-ink-700">{result.pheromoneStatus}</span>

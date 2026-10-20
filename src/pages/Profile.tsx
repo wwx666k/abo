@@ -3,7 +3,9 @@ import { motion } from 'framer-motion';
 import { MAX_HISTORY } from '@/utils/api';
 import { useQuizStore } from '@/store/useQuizStore';
 import { answeredCount } from '@/utils/calculateResult';
-import { TOTAL_QUESTIONS } from '@/data/questions';
+import { QUIZ_MODES } from '@/data/questions';
+
+const modeLabel = (key?: string) => QUIZ_MODES.find((item) => item.key === key)?.label ?? '详细';
 
 function formatTime(ts: number) {
   const date = new Date(ts);
@@ -16,13 +18,15 @@ function formatTime(ts: number) {
 export default function Profile() {
   const navigate = useNavigate();
   const username = useQuizStore((state) => state.username);
+  const mode = useQuizStore((state) => state.mode);
   const answers = useQuizStore((state) => state.answers);
   const history = useQuizStore((state) => state.history);
   const viewResult = useQuizStore((state) => state.viewResult);
   const reset = useQuizStore((state) => state.reset);
   const switchUser = useQuizStore((state) => state.switchUser);
 
-  const done = answeredCount(answers);
+  const done = answeredCount(answers, mode);
+  const modeConfig = QUIZ_MODES.find((item) => item.key === mode) ?? QUIZ_MODES[2];
 
   if (!username) return <Navigate to="/" replace />;
 
@@ -52,9 +56,15 @@ export default function Profile() {
           <span className="text-[15px] font-bold text-brand-violet">{history.length} 次</span>
         </div>
         <div className="mt-3 flex items-center justify-between">
+          <span className="text-[13px] text-ink-500">当前题量</span>
+          <span className="text-[15px] font-bold text-ink-900">
+            {modeConfig.label} · {modeConfig.total} 题
+          </span>
+        </div>
+        <div className="mt-3 flex items-center justify-between">
           <span className="text-[13px] text-ink-500">当前进度</span>
           <span className="text-[15px] font-bold text-ink-900">
-            {done} / {TOTAL_QUESTIONS}
+            {done} / {modeConfig.total}
           </span>
         </div>
         <p className="mt-4 text-[11.5px] leading-relaxed text-ink-400">
@@ -117,7 +127,8 @@ export default function Profile() {
                   {entry.result.title}
                 </span>
                 <span className="mt-0.5 text-[11.5px] text-ink-400">
-                  {formatTime(entry.at)} · 人群占比 {entry.result.populationRate}%
+                  {modeLabel(entry.result.mode)} · {formatTime(entry.at)} · 人群占比{' '}
+                  {entry.result.populationRate}%
                 </span>
               </span>
               <span className="shrink-0 text-[12px] font-medium text-brand-violet">查看</span>
