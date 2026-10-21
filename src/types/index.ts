@@ -1,38 +1,48 @@
 export type Dimension = 'dominance' | 'emotion' | 'boundary' | 'attraction' | 'stability';
 
-export type OptionKey = 'A' | 'B' | 'C' | 'D';
+/** 题目类型：五个计分维度，或测谎题 / 填充题 */
+export type ItemKind = Dimension | 'lie' | 'filler';
+
+/** 正向题直接计分，反向题按 6 - 答案 计分 */
+export type Direction = 'forward' | 'reverse';
 
 export type ScoreBand = 'high' | 'mid' | 'low';
 
 /** 题量档位：快速 25 / 常规 50 / 详细 100 */
 export type QuizMode = 'quick' | 'normal' | 'detail';
 
-export interface QuestionOption {
-  key: OptionKey;
-  text: string;
-  /** 选项分值，固定为 A=1 / B=2 / C=3 / D=4（选项文本按该维度强度由低到高排列） */
-  score: number;
-}
+/** 五点量表：1 完全不符合 → 5 完全符合 */
+export type AnswerValue = 1 | 2 | 3 | 4 | 5;
 
 export interface Question {
   id: string;
   /** 试卷中的题号，从 1 开始 */
   index: number;
-  dimension: Dimension;
   text: string;
-  options: QuestionOption[];
+  kind: ItemKind;
+  direction: Direction;
+  /** 计分权重：1 普通 / 1.5 高关联 / 0 不计分（测谎与填充） */
+  weight: number;
+  /** 测谎题配对 ID，同一对的两题在试卷中必须拉开距离 */
+  liePairId?: string;
 }
 
-/** questionId -> 选项 */
-export type AnswerMap = Record<string, OptionKey>;
+/** questionId -> 1~5 */
+export type AnswerMap = Record<string, AnswerValue>;
 
 export interface DimensionScore {
   key: Dimension;
   label: string;
   /** 百分制 0-100 */
   score: number;
-  /** 原始分，题量 × 1~4 分 */
+  /** 加权原始分 */
   raw: number;
+  /** 该维度理论最低分（全部作答且全部取最低分） */
+  min: number;
+  /** 该维度理论满分（全部作答且全部取最高分） */
+  max: number;
+  /** 该维度的试卷中是否包含高权重题 */
+  hasHighWeight: boolean;
 }
 
 export interface IdentityTheme {
@@ -96,6 +106,10 @@ export interface QuizResult {
   band: ScoreBand;
   /** 本次使用的题量档位 */
   mode: QuizMode;
+  /** 测谎题判定的不一致次数 */
+  inconsistentCount?: number;
+  /** 不一致次数达到阈值，结果信度偏低 */
+  reliabilityFlag?: boolean;
   finishedAt: number;
 }
 

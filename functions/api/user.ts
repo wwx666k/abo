@@ -16,6 +16,17 @@ const MAX_HISTORY = 10;
 
 const keyOf = (username: string) => `user:${encodeURIComponent(username)}`;
 
+/** 只接受 1~5 的整数答案，过滤旧版本选项字母与非法值 */
+const sanitizeAnswers = (input: unknown): Record<string, number> => {
+  const out: Record<string, number> = {};
+  if (!input || typeof input !== 'object') return out;
+  Object.entries(input as Record<string, unknown>).forEach(([id, value]) => {
+    const num = typeof value === 'number' ? value : Number(value);
+    if (Number.isInteger(num) && num >= 1 && num <= 5) out[id] = num;
+  });
+  return out;
+};
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
@@ -60,7 +71,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
     mode,
     progress: progress
       ? {
-          answers: progress.answers && typeof progress.answers === 'object' ? progress.answers : {},
+          answers: sanitizeAnswers(progress.answers),
           currentIndex: Number(progress.currentIndex) || 0,
         }
       : null,

@@ -1,15 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { QUESTIONS_BY_MODE } from '@/data/questions';
+import { LIKERT_OPTIONS, QUESTIONS_BY_MODE } from '@/data/questions';
 import { answeredCount, isComplete } from '@/utils/calculateResult';
 import { saveUser } from '@/utils/api';
 import { useQuizStore } from '@/store/useQuizStore';
 import LoadingOverlay from '@/components/LoadingOverlay';
 import { ChevronLeftIcon } from '@/components/Icons';
-import type { OptionKey } from '@/types';
+import type { AnswerValue } from '@/types';
 
-const AUTHOR_ANSWER = 'wwx';
+const PASS_SERIAL = 'timi';
 
 export default function Quiz() {
   const navigate = useNavigate();
@@ -61,8 +61,8 @@ export default function Quiz() {
   if (!username) return <Navigate to="/" replace />;
   if (!question) return <Navigate to="/" replace />;
 
-  const handleSelect = (key: OptionKey) => {
-    answer(question.id, key);
+  const handleSelect = (value: AnswerValue) => {
+    answer(question.id, value);
     if (currentIndex >= total - 1) return;
 
     if (advanceTimer.current) window.clearTimeout(advanceTimer.current);
@@ -89,8 +89,8 @@ export default function Quiz() {
   };
 
   const handleGateConfirm = () => {
-    if (gateInput.trim().toLowerCase() !== AUTHOR_ANSWER) {
-      setGateError('答案不正确');
+    if (gateInput.trim().toLowerCase() !== PASS_SERIAL) {
+      setGateError('Invalid serial number.');
       return;
     }
     setGateOpen(false);
@@ -133,40 +133,36 @@ export default function Quiz() {
               {question.text}
             </p>
 
-            <div className="mt-5 flex flex-col gap-2">
-              {question.options.map((option) => {
-                const isSelected = selected === option.key;
+            <div className="mt-7 flex items-start justify-between gap-1">
+              {LIKERT_OPTIONS.map((option) => {
+                const isSelected = selected === option.value;
                 return (
-                  <motion.button
-                    key={option.key}
+                  <button
+                    key={option.value}
                     type="button"
-                    onClick={() => handleSelect(option.key)}
-                    whileTap={{ scale: 0.985 }}
-                    animate={isSelected ? { scale: [1, 1.015, 1] } : { scale: 1 }}
-                    transition={{ duration: 0.24 }}
-                    className={`flex w-full items-center gap-3 rounded-2xl border px-4 py-3 text-left transition-colors duration-200 ${
-                      isSelected
-                        ? 'border-brand-violet/55 bg-brand-violet/[0.09] shadow-option'
-                        : 'border-black/[0.07] bg-white/85 hover:border-brand-violet/30'
-                    }`}
+                    onClick={() => handleSelect(option.value)}
+                    className="flex flex-1 flex-col items-center gap-2"
+                    aria-label={option.label}
                   >
-                    <span
-                      className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-[13px] font-bold transition-colors duration-200 ${
+                    <motion.span
+                      animate={isSelected ? { scale: [1, 1.14, 1] } : { scale: 1 }}
+                      transition={{ duration: 0.24 }}
+                      className={`flex h-11 w-11 items-center justify-center rounded-full border text-[14px] font-bold transition-colors duration-200 ${
                         isSelected
-                          ? 'bg-gradient-to-br from-brand-violet to-brand-purple text-white'
-                          : 'bg-black/[0.05] text-ink-400'
+                          ? 'border-transparent bg-gradient-to-br from-brand-violet to-brand-purple text-white shadow-option'
+                          : 'border-black/[0.08] bg-white/85 text-ink-400'
                       }`}
                     >
-                      {option.key}
-                    </span>
+                      {option.value}
+                    </motion.span>
                     <span
-                      className={`text-[14.5px] leading-relaxed ${
-                        isSelected ? 'font-semibold text-brand-violet' : 'text-ink-700'
+                      className={`whitespace-nowrap text-[10.5px] leading-none ${
+                        isSelected ? 'font-semibold text-brand-violet' : 'text-ink-400'
                       }`}
                     >
-                      {option.text}
+                      {option.short}
                     </span>
-                  </motion.button>
+                  </button>
                 );
               })}
             </div>
@@ -212,14 +208,17 @@ export default function Quiz() {
               transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
               className="w-full max-w-[340px] rounded-card bg-white p-6 shadow-card"
             >
-              <h3 className="text-[17px] font-bold tracking-wide text-ink-900">
-                这个网站的作者是谁？
+              <h3 className="text-[16.5px] font-bold leading-[1.5] tracking-wide text-ink-900">
+                Please input the pass Serial number.
               </h3>
               <p className="mt-2 text-[13px] leading-relaxed text-ink-500">
-                回答正确后才会生成你的信息素档案
+                Enter the serial number to unlock your report.
               </p>
 
               <input
+                type="password"
+                autoComplete="off"
+                spellCheck={false}
                 value={gateInput}
                 onChange={(event) => {
                   setGateInput(event.target.value);
@@ -228,7 +227,7 @@ export default function Quiz() {
                 onKeyDown={(event) => {
                   if (event.key === 'Enter') handleGateConfirm();
                 }}
-                placeholder="输入答案"
+                placeholder="Serial number"
                 className="mt-4 w-full rounded-2xl border border-black/[0.08] bg-white px-4 py-3 text-[15px] text-ink-900 outline-none transition-colors focus:border-brand-violet/60"
               />
 
@@ -240,14 +239,14 @@ export default function Quiz() {
                   onClick={() => setGateOpen(false)}
                   className="flex-1 rounded-capsule border border-black/[0.08] bg-white px-4 py-3 text-[14px] font-semibold text-ink-700"
                 >
-                  取消
+                  Cancel
                 </button>
                 <button
                   type="button"
                   onClick={handleGateConfirm}
                   className="flex-1 rounded-capsule bg-gradient-to-r from-brand-violet to-brand-purple px-4 py-3 text-[14px] font-bold text-white"
                 >
-                  确认
+                  Confirm
                 </button>
               </div>
             </motion.div>

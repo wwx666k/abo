@@ -135,7 +135,7 @@ export default function Home() {
                     active ? 'text-brand-violet/80' : 'text-ink-400'
                   }`}
                 >
-                  {item.total} 题
+                  {item.total} 题 · 约 {item.minutes} 分钟
                 </span>
               </button>
             );

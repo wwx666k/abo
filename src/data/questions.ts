@@ -1,13 +1,16 @@
-import type { Dimension, OptionKey, Question, QuestionOption, QuizMode } from '@/types';
-import { mulberry32, shuffle } from '@/utils/random';
+import type { Dimension, Question, QuizMode } from '@/types';
+import { hashString, mulberry32, shuffle } from '@/utils/random';
 
 export type { QuizMode };
 
 /**
- * 题库：
- * - 五个维度各准备 24 道母题（共 120 道）
- * - 通过确定性随机抽取，每个维度取 20 道，合成 100 题的试卷并打乱题序
- * - 每题四个选项的文本按「该维度强度由低到高」排列，因此分值固定为 A=1 / B=2 / C=3 / D=4
+ * 题库基底参考 IPIP-NEO（大五人格）与 SDO（社会支配倾向）的经典条目结构改写：
+ * - 五个维度各 28 道计分题（共 140 道），正向 / 反向混合
+ * - 6 组测谎题对（12 道），不计分，只用于一致性校验
+ * - 8 道填充题，不计分，用于稀释作答节奏
+ * - 五点量表，反向题按 6 - 答案 计分，每题乘以权重后汇总
+ *
+ * 抽题是确定性的：同一档位永远得到同一份试卷，因此刷新、换设备续答都不会串题。
  */
 
 export const DIMENSIONS: Dimension[] = ['dominance', 'emotion', 'boundary', 'attraction', 'stability'];
@@ -31,559 +34,410 @@ export const DIMENSION_DESC: Record<Dimension, string> = {
 /** 雷达图顶点顺序：支配感(上) → 情绪浓度(右) → 边界感(右下) → 吸引力(左下) → 稳定值(左) */
 export const RADAR_ORDER: Dimension[] = ['dominance', 'emotion', 'boundary', 'attraction', 'stability'];
 
-export const QUIZ_MODES: { key: QuizMode; label: string; perDim: QuestionCountPerDim; total: number }[] = [
-  { key: 'quick', label: '快速', perDim: 5, total: 25 },
-  { key: 'normal', label: '常规', perDim: 10, total: 50 },
-  { key: 'detail', label: '详细', perDim: 20, total: 100 },
+/** 五点量表 */
+export const LIKERT_OPTIONS: { value: 1 | 2 | 3 | 4 | 5; label: string; short: string }[] = [
+  { value: 1, label: '完全不符合', short: '完全不符' },
+  { value: 2, label: '比较不符合', short: '不太符合' },
+  { value: 3, label: '不确定', short: '一般' },
+  { value: 4, label: '比较符合', short: '比较符合' },
+  { value: 5, label: '完全符合', short: '完全符合' },
 ];
+
+export interface ModeConfig {
+  key: QuizMode;
+  label: string;
+  /** 每个维度抽取的计分题数 */
+  perDim: number;
+  total: number;
+  minutes: number;
+  /** 测谎题对数量（每对 2 题） */
+  liePairs: number;
+  /** 填充题数量 */
+  fillers: number;
+  /** 每个维度至少包含的高权重题数 */
+  highPerDim: number;
+  /** 仅这些维度保留高权重题；不填则全部维度生效 */
+  highOnly?: Dimension[];
+}
+
+/**
+ * 25 = 5×4 计分 + 2 组测谎(4) + 1 填充
+ * 50 = 5×8 计分 + 4 组测谎(8) + 2 填充
+ * 100 = 5×18 计分 + 5 组测谎(10)
+ */
+export const QUIZ_MODES: ModeConfig[] = [
+  {
+    key: 'quick',
+    label: '快速',
+    perDim: 4,
+    total: 25,
+    minutes: 2,
+    liePairs: 2,
+    fillers: 1,
+    highPerDim: 1,
+    highOnly: ['dominance', 'boundary'],
+  },
+  {
+    key: 'normal',
+    label: '常规',
+    perDim: 8,
+    total: 50,
+    minutes: 5,
+    liePairs: 4,
+    fillers: 2,
+    highPerDim: 1,
+  },
+  {
+    key: 'detail',
+    label: '详细',
+    perDim: 18,
+    total: 100,
+    minutes: 12,
+    liePairs: 5,
+    fillers: 0,
+    highPerDim: 2,
+  },
+];
+
+export const MODE_CONFIG: Record<QuizMode, ModeConfig> = {
+  quick: QUIZ_MODES[0],
+  normal: QUIZ_MODES[1],
+  detail: QUIZ_MODES[2],
+};
 
 export const DEFAULT_MODE: QuizMode = 'detail';
 
-export const QUESTIONS_PER_DIMENSION = 20;
-export const OPTION_SCORE: Record<OptionKey, number> = { A: 1, B: 2, C: 3, D: 4 };
+/** [题干, 'f' 正向 / 'r' 反向, 权重（缺省 1）] */
+type Raw = [string, 'f' | 'r', number?];
 
-interface RawItem {
-  text: string;
-  options: [string, string, string, string];
-}
+const DOMINANCE: Raw[] = [
+  ['我天生就适合做领导者。', 'f', 1.5],
+  ['一群人做决定时，我更希望最后拍板的人是我。', 'f', 1.5],
+  ['我不介意为了达成目标去影响甚至施压别人。', 'f', 1.5],
+  ['在关系里，我需要掌握节奏和主动权。', 'f', 1.5],
+  ['看到有人犹豫不决，我会直接替他把决定做了。', 'f', 1.5],
+  ['我很难接受别人替我安排我的人生。', 'f', 1.5],
+  ['我享受别人听我指挥的感觉。', 'f', 1.5],
+  ['如果规则挡了我的路，我会想办法绕过去。', 'f', 1.5],
+  ['我更在意赢，而不是被所有人喜欢。', 'f', 1.5],
+  ['面对比我强势的人，我会想压过他，而不是配合他。', 'f', 1.5],
+  ['我习惯等别人先开口。', 'r'],
+  ['别人替我做决定时，我会觉得轻松。', 'r'],
+  ['讨论中我常常顺着别人的意见走。', 'r'],
+  ['我不太喜欢站在人群中心。', 'r'],
+  ['只要事情能推进，谁主导我无所谓。', 'r'],
+  ['我很少主动要求什么。', 'r'],
+  ['我通常会先观察一阵，再决定要不要表态。', 'f'],
+  ['需要有人负责时，我愿意站出来。', 'f'],
+  ['我表达意见时比较直接。', 'f'],
+  ['我不喜欢被安排，但多数时候会忍下来。', 'f'],
+  ['别人打断我说话，我会当场纠正。', 'f'],
+  ['我在冲突里很少退让。', 'f'],
+  ['我讨厌被人指挥，但也不会正面冲突。', 'f'],
+  ['我对「被需要」的渴望超过「被服从」。', 'r'],
+  ['我宁愿当幕后那个人。', 'r'],
+  ['需要有人拍板时，我通常是那个人。', 'f'],
+  ['我会为了让局面可控而提前布局。', 'f'],
+  ['别人的情绪不太能左右我的决定。', 'f'],
+];
 
-const POOL: Record<Dimension, RawItem[]> = {
-  /* ---------------------------------- 支配感 ---------------------------------- */
-  dominance: [
-    {
-      text: '一群人同时开口的时候，你通常会：',
-      options: [
-        '安静等别人说完，再决定要不要讲',
-        '顺着大家的节奏补充两句',
-        '主动把话题往自己在意的方向引',
-        '很自然地成为决定话题走向的人',
-      ],
-    },
-    {
-      text: '团队里没人拍板的时候，你会：',
-      options: ['继续等别人决定', '提个建议看大家反应', '先推一个方案出来', '直接定下来并分配任务'],
-    },
-    {
-      text: '别人替你做决定时，你的第一反应是：',
-      options: ['松一口气，省事', '无所谓，只要不太离谱', '有点不舒服，但会先配合', '立刻想夺回决定权'],
-    },
-    {
-      text: '你对「被安排」的容忍度：',
-      options: ['很高，我习惯被安排', '还行，重要的事才在意', '偏低，我需要知情', '极低，我的事只能我说了算'],
-    },
-    {
-      text: '约会去哪、吃什么，通常是：',
-      options: ['对方定，我都行', '一起商量，我让步比较多', '我先给方案再让对方挑', '我直接定，对方跟着走'],
-    },
-    {
-      text: '当你的意见和多数人相反：',
-      options: ['立刻放弃自己的想法', '保留意见但不表态', '表达出来，但不指望被采纳', '会坚持到说服对方为止'],
-    },
-    {
-      text: '别人踩到你的底线时：',
-      options: ['先反省是不是自己太敏感', '忍一下，过几天就好', '当场表达不满', '立刻切断或反击，不留余地'],
-    },
-    {
-      text: '在一段关系里你更想当：',
-      options: ['被照顾的一方', '平等的一方', '有话语权的一方', '掌控节奏的一方'],
-    },
-    {
-      text: '别人夸你「很听话」，你会：',
-      options: ['觉得是夸奖', '没太大感觉', '有点被冒犯', '明确表示不喜欢这个词'],
-    },
-    {
-      text: '需要有人站出来负责时：',
-      options: ['尽量不是我', '有人推我才上', '可以是我，但要有授权', '我来，这本来就该我来'],
-    },
-    {
-      text: '你的手机允许别人随便翻吗：',
-      options: ['完全无所谓', '大部分可以', '得先问我', '绝对不行'],
-    },
-    {
-      text: '结束一段关系时，你更常是：',
-      options: ['被动等待对方开口', '拖着，直到自然消失', '先试探再摊牌', '直接说清楚并执行'],
-    },
-    {
-      text: '面对明显比你强势的人，你：',
-      options: ['自动变得顺从', '表面配合，内心保留', '会试着扳回一点主动', '会想赢过他'],
-    },
-    {
-      text: '别人问你「你想怎样」时，你：',
-      options: ['常常答不上来', '需要时间想一想', '有大致方向', '非常清楚，并且会讲明白'],
-    },
-    {
-      text: '你更受不了哪种人：',
-      options: ['太强势、爱指挥的人', '忽冷忽热的人', '磨叽不表态的人', '想控制我的人'],
-    },
-    {
-      text: '计划临时被改，你会：',
-      options: ['完全接受', '有点不爽但配合', '要求对方解释清楚', '重新拿回主导权，按我的来'],
-    },
-    {
-      text: '你说话的语速和音量：',
-      options: ['偏轻偏慢', '适中，看场合', '偏快，有力度', '很稳，能压住场面'],
-    },
-    {
-      text: '被人误解的时候，你会：',
-      options: ['懒得解释，随他去', '有点在意，但不争', '会解释清楚', '会纠正到对方认错'],
-    },
-    {
-      text: '你在朋友群里的角色：',
-      options: ['附和型', '气氛组', '出主意的人', '拿主意的人'],
-    },
-    {
-      text: '面对规则，你的态度是：',
-      options: ['规则就是规则，遵守', '大多遵守，个别变通', '有用的遵守，没用的绕过', '规则是给没能力的人定的'],
-    },
-    {
-      text: '你对「领导」这个词的感觉：',
-      options: ['有点抗拒，我不想被领导', '中性', '无所谓，只要能成事', '我就是那个人'],
-    },
-    {
-      text: '别人向你示弱求助时，你：',
-      options: ['很容易心软答应', '能帮就帮', '帮之前先问清楚', '会主导整个解决过程'],
-    },
-    {
-      text: '争论中你更在意：',
-      options: ['别把关系弄僵', '双方都能下台', '把道理讲清楚', '赢'],
-    },
-    {
-      text: '你希望伴侣的性格是：',
-      options: ['能替我拿主意', '温柔好相处', '有主见但不压我', '愿意听我的'],
-    },
-  ],
+const EMOTION: Raw[] = [
+  ['我的情绪来得又快又猛。', 'f', 1.5],
+  ['一件小事就能让我情绪起伏一整天。', 'f', 1.5],
+  ['我喜欢那种心跳加速、几乎失控的感觉。', 'f', 1.5],
+  ['我会因为一段音乐突然难过。', 'f', 1.5],
+  ['我很容易对某个人产生强烈的依赖感。', 'f', 1.5],
+  ['我的喜欢和讨厌都非常极端。', 'f', 1.5],
+  ['我很少有大起大落的情绪。', 'r'],
+  ['别人情绪激动时，我通常很冷静。', 'r'],
+  ['我不太容易被电影或音乐打动。', 'r'],
+  ['我倾向于把感受藏在心里。', 'r'],
+  ['我很少因为小事心烦。', 'r'],
+  ['我习惯用理性压住情绪。', 'r'],
+  ['我会有莫名其妙低落的时刻。', 'f'],
+  ['我容易被别人的情绪传染。', 'f'],
+  ['我心里戏很多。', 'f'],
+  ['我会反复回想别人说过的一句话。', 'f'],
+  ['我喜欢浓烈的东西：味道、颜色、关系。', 'f'],
+  ['我对不咸不淡的关系没有兴趣。', 'f'],
+  ['我很少在别人面前崩溃。', 'r'],
+  ['我需要独处来消化情绪。', 'f'],
+  ['我会因为一句无心的话记很久。', 'f'],
+  ['我的开心也很容易满出来。', 'f'],
+  ['我对稳定的渴望超过对刺激的渴望。', 'r'],
+  ['我很少主动表达喜欢。', 'r'],
+  ['我做决定时更多靠感觉。', 'f'],
+  ['我容易在深夜情绪泛滥。', 'f'],
+  ['我对别人的痛苦共情得很深。', 'f'],
+  ['我常被人说太敏感。', 'f'],
+];
 
-  /* ---------------------------------- 情绪浓度 ---------------------------------- */
-  emotion: [
-    {
-      text: '你一天里的情绪起伏：',
-      options: ['基本很平', '偶尔有点波动', '常有明显起伏', '像坐过山车'],
-    },
-    {
-      text: '看剧看电影的时候你会：',
-      options: ['很少被打动', '有些片段会动容', '经常被戳到', '很容易哭，或者久久出不来'],
-    },
-    {
-      text: '喜欢一个人时，你的感受强度：',
-      options: ['淡淡的，可有可无', '有点在意', '很明显，会一直想', '浓烈到影响生活'],
-    },
-    {
-      text: '你更容易被什么打动：',
-      options: ['实际的好处', '稳定的陪伴', '细节里的在意', '强烈的情绪冲击'],
-    },
-    {
-      text: '别人情绪低落时，你：',
-      options: ['不太感觉得到', '能察觉，但不太会接', '会被影响，想安慰', '会一起沉进去，甚至比对方更难受'],
-    },
-    {
-      text: '你的表达方式：',
-      options: ['克制，很少说感受', '想说但常说不出口', '愿意讲，但看人', '藏不住，全写在脸上'],
-    },
-    {
-      text: '深夜的你会：',
-      options: ['按时睡觉，不太多想', '偶尔想些事情', '常回想旧事', '情绪翻涌，很难停下来'],
-    },
-    {
-      text: '一段关系结束后，你：',
-      options: ['很快翻篇', '难受一阵子', '会反复回想细节', '会长时间被情绪困住'],
-    },
-    {
-      text: '别人一句冷淡的回复，你会：',
-      options: ['不放在心上', '稍微在意一下', '会想很久', '会直接情绪崩掉'],
-    },
-    {
-      text: '你听的音乐更偏向：',
-      options: ['无所谓，随便听', '轻快舒缓', '有旋律感的流行', '情绪很重、能上头的那种'],
-    },
-    {
-      text: '你对「氛围感」的敏感度：',
-      options: ['不太在意', '一般', '挺在意', '极度依赖氛围'],
-    },
-    {
-      text: '你更容易因为什么失眠：',
-      options: ['很少失眠', '咖啡或者太忙', '想事情', '情绪'],
-    },
-    {
-      text: '有人热烈追求你，你会：',
-      options: ['觉得压力大，想躲', '礼貌但克制', '会被打动', '很容易跟着一起烧起来'],
-    },
-    {
-      text: '你处理难受的方式：',
-      options: ['转移注意力', '自己消化', '找人倾诉', '反复咀嚼，直到自己平静'],
-    },
-    {
-      text: '你的笑点和泪点：',
-      options: ['都比较高', '中等', '偏敏感', '非常敏感，容易被带动'],
-    },
-    {
-      text: '你是否容易共情到别人身上：',
-      options: ['很少', '有时', '经常', '常常分不清是谁的情绪'],
-    },
-    {
-      text: '你更怕哪种关系：',
-      options: ['太黏人', '太平淡', '没有回应', '没有波澜'],
-    },
-    {
-      text: '别人夸你「情绪稳定」，你的感觉是：',
-      options: ['很受用', '一般', '有点不甘心', '觉得那其实是压抑'],
-    },
-    {
-      text: '你理想中的爱情：',
-      options: ['安稳过日子', '互相照顾', '有心动也有陪伴', '轰轰烈烈，有故事感'],
-    },
-    {
-      text: '你的朋友圈风格：',
-      options: ['几乎不发', '偶尔记录生活', '常发心情', '情绪浓度很高'],
-    },
-    {
-      text: '别人对你说重话时：',
-      options: ['记不太住', '会记住但不提', '会难过一阵', '会记很久并反复想'],
-    },
-    {
-      text: '你会不会突然被一首歌或一段画面击中：',
-      options: ['几乎不会', '偶尔', '经常', '非常频繁'],
-    },
-    {
-      text: '你更相信：',
-      options: ['理性判断', '经验', '直觉', '感觉'],
-    },
-    {
-      text: '你对自己情绪的掌控：',
-      options: ['完全掌控', '大多时候能控', '常常失控', '基本被情绪带着走'],
-    },
-  ],
+const BOUNDARY: Raw[] = [
+  ['我的东西，没有我的允许谁都不能碰。', 'f', 1.5],
+  ['别人未经同意替我做决定，我会立刻翻脸。', 'f', 1.5],
+  ['我非常清楚哪些事是我的事、哪些不是。', 'f', 1.5],
+  ['我不接受任何人用「为你好」来干涉我。', 'f', 1.5],
+  ['再亲近的人也不能随便翻我的手机。', 'f', 1.5],
+  ['我会明确告诉别人，这不在我能接受的范围里。', 'f', 1.5],
+  ['我宁愿被讨厌，也不愿被越界。', 'f', 1.5],
+  ['我需要一块谁都不能进入的私人空间。', 'f', 1.5],
+  ['我很难拒绝别人的请求。', 'r'],
+  ['别人难过时，我会放下自己的事去陪。', 'r'],
+  ['我常常因为不好意思而答应不想做的事。', 'r'],
+  ['我会为了不让气氛尴尬而委屈自己。', 'r'],
+  ['别人问我私事，我基本都会说。', 'r'],
+  ['我很少对人设防。', 'r'],
+  ['我会先照顾别人的感受，再考虑自己。', 'r'],
+  ['我不太会说「不」。', 'r'],
+  ['我可以和很熟的人共享一切。', 'r'],
+  ['别人开玩笑踩到我，我一般笑笑就过去了。', 'r'],
+  ['我需要独处来恢复能量。', 'f'],
+  ['关系变太近时，我会下意识后退。', 'f'],
+  ['我对「被黏着」感到不适。', 'f'],
+  ['我会把工作和生活分得很开。', 'f'],
+  ['我不喜欢别人过问我的计划。', 'f'],
+  ['我可以对一个人好，但不代表我属于他。', 'f'],
+  ['我会先划清界限，再谈感情。', 'f'],
+  ['我很少主动分享自己的私事。', 'f'],
+  ['我不介意别人知道我的行踪。', 'r'],
+  ['我愿意为重要的人打破自己的规则。', 'r'],
+];
 
-  /* ---------------------------------- 边界感 ---------------------------------- */
-  boundary: [
-    {
-      text: '别人未经同意看你的手机：',
-      options: ['无所谓', '有点介意', '会不高兴', '直接翻脸'],
-    },
-    {
-      text: '朋友半夜找你倾诉：',
-      options: ['随时接，很乐意', '看情况', '会说清楚我能陪多久', '会拒绝，我的时间是我的'],
-    },
-    {
-      text: '你对「私人空间」的需求：',
-      options: ['几乎没有', '少量', '比较需要', '极度需要'],
-    },
-    {
-      text: '别人问你工资或隐私：',
-      options: ['直接说', '含糊过去', '会明确拒绝', '觉得这是冒犯'],
-    },
-    {
-      text: '一段关系里你更怕：',
-      options: ['被抛弃', '被误解', '被侵入', '被吞掉自我'],
-    },
-    {
-      text: '别人替你做决定时，你：',
-      options: ['很乐意', '大多接受', '会纠正', '会很反感'],
-    },
-    {
-      text: '你在社交之后需要：',
-      options: ['无所谓，随时都能社交', '一点点独处', '明显需要独处充电', '必须彻底消失一段时间'],
-    },
-    {
-      text: '你是否愿意为关系改变自己的习惯：',
-      options: ['很愿意', '愿意改一部分', '尽量不动核心', '不改，合不来就算了'],
-    },
-    {
-      text: '别人打听你的感情状态：',
-      options: ['无所谓，随便说', '会说个大概', '会转移话题', '会明确表示不聊'],
-    },
-    {
-      text: '你的房间或桌面通常：',
-      options: ['别人随便动都行', '有点乱但无所谓', '不喜欢别人乱动', '谁动我跟谁急'],
-    },
-    {
-      text: '对「合群」这件事：',
-      options: ['很在意，怕被排斥', '希望被接纳', '不太在意', '完全不在乎'],
-    },
-    {
-      text: '别人情绪不好，希望你陪着：',
-      options: ['一定陪', '大多会陪', '会说清楚自己能陪多久', '我会先照顾好自己'],
-    },
-    {
-      text: '你怎么看待「为你好」的干涉：',
-      options: ['感激', '能接受', '反感但不撕破', '直接顶回去'],
-    },
-    {
-      text: '你在关系里的独处需求：',
-      options: ['基本没有', '偶尔', '定期需要', '长期需要，这是底线'],
-    },
-    {
-      text: '别人给你贴标签时，你：',
-      options: ['接受，甚至配合', '无所谓', '会纠正', '会明确拒绝被定义'],
-    },
-    {
-      text: '面对集体活动，你：',
-      options: ['每次都想参加', '大多参加', '选择性参加', '能推就推'],
-    },
-    {
-      text: '别人向你借东西或借钱：',
-      options: ['基本都会给', '看关系', '会设条件', '原则性拒绝'],
-    },
-    {
-      text: '你是否会为了不尴尬而委屈自己：',
-      options: ['经常', '有时', '很少', '从不'],
-    },
-    {
-      text: '别人问「我们是什么关系」时，你会：',
-      options: ['立刻想确定下来', '顺着对方说', '按自己的节奏讲', '不喜欢被追问'],
-    },
-    {
-      text: '你对「承诺」的态度：',
-      options: ['容易给承诺', '会给，但留余地', '慎重给', '极少给，给了就认'],
-    },
-    {
-      text: '别人开玩笑开到你身上：',
-      options: ['跟着一起笑', '有点不舒服但不提', '会说明自己不喜欢', '会直接制止'],
-    },
-    {
-      text: '你更希望关系是：',
-      options: ['融为一体', '亲密无间', '亲密但各有空间', '各自独立，偶尔靠近'],
-    },
-    {
-      text: '面对人群和热闹：',
-      options: ['很喜欢', '还行', '容易疲惫', '会想逃离'],
-    },
-    {
-      text: '别人说「你怎么这么冷淡」：',
-      options: ['会反省自己', '会有点在意', '觉得对方越界', '觉得正好，省事'],
-    },
-  ],
+const ATTRACTION: Raw[] = [
+  ['我走进一个房间时，会有人注意到我。', 'f', 1.5],
+  ['我很清楚自己身上有让人靠近的东西。', 'f', 1.5],
+  ['我擅长让别人对我产生兴趣。', 'f', 1.5],
+  ['我享受被注视的感觉。', 'f', 1.5],
+  ['我很容易让人对我上头。', 'f', 1.5],
+  ['我知道怎么用一个眼神改变气氛。', 'f', 1.5],
+  ['我在人群里通常是透明的那一个。', 'r'],
+  ['我不太会主动吸引别人的注意。', 'r'],
+  ['被夸外貌时我会不自在。', 'r'],
+  ['我不觉得自己有魅力。', 'r'],
+  ['我很少收到别人的主动示好。', 'r'],
+  ['我不擅长暧昧。', 'r'],
+  ['我说话时别人会认真听。', 'f'],
+  ['我常常被人主动搭话。', 'f'],
+  ['我对自己的外形有把握。', 'f'],
+  ['我能感觉到别人在看我。', 'f'],
+  ['我在陌生场合也能很快被记住。', 'f'],
+  ['我身上有种说不清的距离感，反而让人想靠近。', 'f'],
+  ['我更在意相处舒服，而不是有没有吸引力。', 'r'],
+  ['我不喜欢成为焦点。', 'r'],
+  ['我会精心打理自己的外表。', 'f'],
+  ['我能在很短时间内判断谁对我有意思。', 'f'],
+  ['我很少刻意经营自己的形象。', 'r'],
+  ['别人说我「很有味道」。', 'f'],
+  ['我在关系里更常是被追的那一方。', 'f'],
+  ['我不太会表达好感，容易错过。', 'r'],
+  ['我笑起来很有感染力。', 'f'],
+  ['我更喜欢安静地待在角落。', 'r'],
+];
 
-  /* ---------------------------------- 吸引力 ---------------------------------- */
-  attraction: [
-    {
-      text: '走进一个全是陌生人的房间，你通常：',
-      options: ['尽量不引人注意', '正常存在', '会有人主动来搭话', '很快成为焦点'],
-    },
-    {
-      text: '别人第一次见你，常说你：',
-      options: ['有点难接近', '温和好相处', '挺有意思', '很有吸引力，很有气场'],
-    },
-    {
-      text: '你在社交平台上的被关注度：',
-      options: ['几乎没人理', '普通', '常有人主动互动', '经常被围观或被私信'],
-    },
-    {
-      text: '你最擅长哪种吸引：',
-      options: ['不太会', '靠真诚和稳定', '靠有趣的相处', '靠氛围和张力'],
-    },
-    {
-      text: '别人记住你的通常是：',
-      options: ['不太记得我', '我的温和', '我的想法', '我的存在感'],
-    },
-    {
-      text: '你被表白或被喜欢的频率：',
-      options: ['几乎没有', '偶尔', '不少', '很多，甚至成为困扰'],
-    },
-    {
-      text: '你在关系里更靠什么留下对方：',
-      options: ['付出和照顾', '陪伴', '沟通与理解', '我的个人魅力'],
-    },
-    {
-      text: '面对喜欢的人，你会：',
-      options: ['不太敢接近', '慢慢靠近', '主动制造机会', '让对方先上头'],
-    },
-    {
-      text: '你的眼神和气场常被形容为：',
-      options: ['平淡', '温和', '有点锐利', '很有侵略性，很勾人'],
-    },
-    {
-      text: '你在人群里更常：',
-      options: ['被忽略', '被当作好相处的人', '被当作有意思的人', '被当作想靠近的人'],
-    },
-    {
-      text: '别人对你的第一印象和实际情况：',
-      options: ['常常不准', '大致差不多', '印象挺好', '常常被高估或被惦记'],
-    },
-    {
-      text: '你更擅长：',
-      options: ['独处', '稳定陪伴', '深度交流', '制造心动'],
-    },
-    {
-      text: '你是否会不自觉地吸引到别人：',
-      options: ['基本不会', '偶尔', '有时', '经常，甚至不是我的本意'],
-    },
-    {
-      text: '你的穿着风格：',
-      options: ['随便，能穿就行', '干净舒服', '有明确审美', '很有辨识度'],
-    },
-    {
-      text: '别人夸你好看或有魅力时：',
-      options: ['不自在', '谢谢就好', '会记得', '早就知道'],
-    },
-    {
-      text: '你更想被别人怎么记住：',
-      options: ['无所谓', '靠谱的人', '有趣的人', '特别的人'],
-    },
-    {
-      text: '你在暧昧期的表现：',
-      options: ['基本没有暧昧期', '慢慢来', '有来有回', '很会拉扯，张力拉满'],
-    },
-    {
-      text: '被喜欢的人夸赞时，你会：',
-      options: ['害羞躲开', '开心但克制', '会回应', '顺势推进一步'],
-    },
-    {
-      text: '你更相信吸引来自：',
-      options: ['缘分', '相处', '合适', '感觉与张力'],
-    },
-    {
-      text: '别人模仿或追随你的风格：',
-      options: ['没有过', '偶尔', '有时', '经常'],
-    },
-    {
-      text: '你的声音通常被形容为：',
-      options: ['平淡', '好听', '有辨识度', '很有杀伤力'],
-    },
-    {
-      text: '在亲密关系里，你更常是：',
-      options: ['被追的那个', '平等互动', '主动的一方', '被围着转的那个'],
-    },
-    {
-      text: '你对「吸引力」的看法：',
-      options: ['不重要', '有用，但不是全部', '挺重要', '是关系里最关键的东西'],
-    },
-    {
-      text: '别人对你产生依赖：',
-      options: ['很少', '偶尔', '有时', '经常，甚至很难离开'],
-    },
-  ],
+const STABILITY: Raw[] = [
+  ['不管发生什么，我都能保持自己的节奏。', 'f', 1.5],
+  ['我答应的事，几乎不会变。', 'f', 1.5],
+  ['我的情绪很少影响我的判断。', 'f', 1.5],
+  ['我做的长期决定，很少反悔。', 'f', 1.5],
+  ['在混乱里我反而更冷静。', 'f', 1.5],
+  ['我对自己的选择有持续的信念。', 'f', 1.5],
+  ['我经常改变主意。', 'r'],
+  ['我的计划常常坚持不到最后。', 'r'],
+  ['我很容易被新东西吸引，然后放弃旧的。', 'r'],
+  ['我的状态起伏很大。', 'r'],
+  ['我很难长期维持一个习惯。', 'r'],
+  ['我常在事后后悔自己的决定。', 'r'],
+  ['我做事之前会想清楚后果。', 'f'],
+  ['我更喜欢稳定、可预期的生活。', 'f'],
+  ['我很少因为一时冲动做决定。', 'f'],
+  ['我能把一件无聊的事做很久。', 'f'],
+  ['我对承诺看得很重。', 'f'],
+  ['我情绪上来时也能刹住车。', 'f'],
+  ['我需要不断的新鲜感。', 'r'],
+  ['我常常同时开很多头，然后都放下。', 'r'],
+  ['我一旦决定，就不太听劝。', 'f'],
+  ['我会定期复盘自己的状态。', 'f'],
+  ['我在压力下容易乱。', 'r'],
+  ['我的作息比较规律。', 'f'],
+  ['我很少临时放别人鸽子。', 'f'],
+  ['我喜欢随性，讨厌被计划绑住。', 'r'],
+  ['我能等，哪怕结果很久才来。', 'f'],
+  ['我对「以后」没有太多打算。', 'r'],
+];
 
-  /* ---------------------------------- 稳定值 ---------------------------------- */
-  stability: [
-    {
-      text: '你的日常作息：',
-      options: ['完全随心情', '有点乱', '大致规律', '很规律'],
-    },
-    {
-      text: '你的计划执行度：',
-      options: ['常常只有想法', '常半途而废', '大多能完成', '基本都完成'],
-    },
-    {
-      text: '你的情绪恢复速度：',
-      options: ['很久都缓不过来', '比较慢', '一般', '很快'],
-    },
-    {
-      text: '面对变化，你：',
-      options: ['会乱掉', '会焦虑一阵', '能适应', '提前准备好，很从容'],
-    },
-    {
-      text: '你做决定的方式：',
-      options: ['定了也常改', '凭感觉定', '问完建议再定', '想清楚再定'],
-    },
-    {
-      text: '你的社交关系：',
-      options: ['来来去去，换得很勤', '变化比较多', '比较稳定', '长期稳定，有几个老朋友'],
-    },
-    {
-      text: '你容易被诱惑吗：',
-      options: ['很容易', '比较容易', '一般', '很不容易'],
-    },
-    {
-      text: '你的财务习惯：',
-      options: ['完全凭心情花', '常常月光', '大致有规划', '有记账也有储蓄'],
-    },
-    {
-      text: '在一段感情里你的稳定度：',
-      options: ['容易动摇', '需要对方给我安全感', '比较稳', '非常稳'],
-    },
-    {
-      text: '你对自己的评价：',
-      options: ['完全取决于别人怎么说', '常常摇摆', '大致清楚', '清楚且稳定'],
-    },
-    {
-      text: '遇到挫折时，你：',
-      options: ['会想彻底放弃', '会停一阵', '会低落但继续', '照常推进'],
-    },
-    {
-      text: '你对自己承诺的可靠度：',
-      options: ['常常做不到', '偶尔失约', '大多做到', '说到做到'],
-    },
-    {
-      text: '你是否需要外部刺激：',
-      options: ['非常需要，不然会空', '比较需要', '偶尔', '不太需要'],
-    },
-    {
-      text: '你的兴趣和爱好持续时间：',
-      options: ['三分钟热度', '换得比较勤', '比较久', '很久'],
-    },
-    {
-      text: '别人对你的信任度：',
-      options: ['常被怀疑', '一般', '比较信任', '非常信任'],
-    },
-    {
-      text: '面对压力，你：',
-      options: ['会崩溃或逃避', '会失眠焦虑', '能扛', '越压越稳'],
-    },
-    {
-      text: '你的情绪基调：',
-      options: ['非常不稳定', '起伏明显', '中性偏暖', '平和'],
-    },
-    {
-      text: '你是否容易后悔：',
-      options: ['一直在后悔', '经常', '偶尔', '很少'],
-    },
-    {
-      text: '你的生活节奏：',
-      options: ['完全混乱', '随缘', '有大致节奏', '有明确规划'],
-    },
-    {
-      text: '别人形容你：',
-      options: ['抓不住', '有点飘', '还行', '靠谱'],
-    },
-    {
-      text: '你维持长期目标的能力：',
-      options: ['几乎没有', '比较弱', '一般', '很强'],
-    },
-    {
-      text: '面对关系里的问题，你：',
-      options: ['会直接跑', '会回避', '会等对方开口', '会主动沟通解决'],
-    },
-    {
-      text: '你的自我约束：',
-      options: ['基本没有', '偏弱', '中等', '很强'],
-    },
-    {
-      text: '你更希望关系是：',
-      options: ['充满未知', '有新鲜感', '平稳舒适', '稳定长久'],
-    },
-  ],
+const RAW_BANKS: Record<Dimension, Raw[]> = {
+  dominance: DOMINANCE,
+  emotion: EMOTION,
+  boundary: BOUNDARY,
+  attraction: ATTRACTION,
+  stability: STABILITY,
 };
 
-function toOptions(texts: [string, string, string, string]): QuestionOption[] {
-  const keys: OptionKey[] = ['A', 'B', 'C', 'D'];
-  return texts.map((text, i) => ({ key: keys[i], text, score: i + 1 }));
+const PREFIX: Record<Dimension, string> = {
+  dominance: 'd',
+  emotion: 'e',
+  boundary: 'b',
+  attraction: 'a',
+  stability: 's',
+};
+
+function buildBank(dimension: Dimension): Question[] {
+  return RAW_BANKS[dimension].map(([text, direction, weight], i) => ({
+    id: `${PREFIX[dimension]}${String(i + 1).padStart(2, '0')}`,
+    index: 0,
+    text,
+    kind: dimension,
+    direction: direction === 'r' ? 'reverse' : 'forward',
+    weight: weight ?? 1,
+  }));
 }
 
-export type QuestionCountPerDim = 5 | 10 | 20;
+export const BANKS: Record<Dimension, Question[]> = {
+  dominance: buildBank('dominance'),
+  emotion: buildBank('emotion'),
+  boundary: buildBank('boundary'),
+  attraction: buildBank('attraction'),
+  stability: buildBank('stability'),
+};
 
-/**
- * 生成一份试卷：每个维度从 24 道母题中确定性抽取 `qPerDim` 道，再整体打乱题序。
- * 同一 qPerDim 下题号与题面恒定，便于跨设备续答。
- */
-export function buildQuestionBank(qPerDim: QuestionCountPerDim, seed = 20261020): Question[] {
-  const rng = mulberry32(seed);
-  const picked: Question[] = [];
+/** 测谎题对：A 为正向表述，B 为反向表述，两题语义相反 */
+const LIE_RAW: { id: string; a: string; b: string }[] = [
+  { id: 'L1', a: '我在陌生人面前也能很快放松下来。', b: '面对陌生人，我总是紧张到不知道说什么。' },
+  { id: 'L2', a: '我很少因为别人的评价而影响心情。', b: '别人一句负面评价能让我难受很久。' },
+  { id: 'L3', a: '我做事之前通常会把计划想清楚。', b: '我经常冲动行事，事后才想后果。' },
+  { id: 'L4', a: '我习惯主动承担团队里的事务。', b: '团队里的事，我一般都躲着不做。' },
+  { id: 'L5', a: '我能长时间专注在同一件事上。', b: '我很难把注意力放在一件事上超过十分钟。' },
+  { id: 'L6', a: '我对自己的生活有明确的规划。', b: '我基本走一步看一步，没什么计划。' },
+];
+
+export const LIE_PAIRS: Question[][] = LIE_RAW.map(({ id, a, b }) => [
+  {
+    id: `${id}A`,
+    index: 0,
+    text: a,
+    kind: 'lie',
+    direction: 'forward',
+    weight: 0,
+    liePairId: id,
+  },
+  {
+    id: `${id}B`,
+    index: 0,
+    text: b,
+    kind: 'lie',
+    direction: 'reverse',
+    weight: 0,
+    liePairId: id,
+  },
+]);
+
+const FILLER_TEXT = [
+  '我更喜欢早上起床后先喝一杯水。',
+  '我会在手机里存很多截图。',
+  '我出门前通常会检查一遍有没有带钥匙。',
+  '我喜欢走路时听点什么。',
+  '我对天气变化比较敏感。',
+  '我会把没看完的剧先存起来。',
+  '我偶尔会整理房间来放空。',
+  '我买东西前会先看评价。',
+];
+
+export const FILLERS: Question[] = FILLER_TEXT.map((text, i) => ({
+  id: `f${String(i + 1).padStart(2, '0')}`,
+  index: 0,
+  text,
+  kind: 'filler',
+  direction: 'forward',
+  weight: 0,
+}));
+
+const PAPER_SEED = 20261021;
+
+/** 测谎题位置：均匀铺开并加轻微抖动，保证同一对两题至少相隔 5 题 */
+function placeLiePositions(total: number, count: number, rng: () => number): number[] {
+  if (count === 0) return [];
+  if (count === 1) return [Math.floor(total / 2)];
+
+  const base = Array.from({ length: count }, (_, i) => Math.round((i * (total - 1)) / (count - 1)));
+  const jittered = base
+    .map((pos) => Math.min(total - 1, Math.max(0, pos + Math.floor(rng() * 5) - 2)))
+    .sort((a, b) => a - b);
+
+  const distinct = new Set(jittered).size === count;
+  const spaced = jittered.every((pos, i) => i === 0 || pos - jittered[i - 1] >= 5);
+  return distinct && spaced ? jittered : base;
+}
+
+function buildPaper(mode: QuizMode): Question[] {
+  const cfg = MODE_CONFIG[mode];
+  const rng = mulberry32(hashString(`paper:${mode}:${PAPER_SEED}`));
+  const scored: Question[] = [];
 
   DIMENSIONS.forEach((dimension) => {
-    const items = shuffle(POOL[dimension], rng).slice(0, qPerDim);
-    items.forEach((item, i) => {
-      picked.push({
-        id: `${dimension}-${i}`,
-        index: 0,
-        dimension,
-        text: item.text,
-        options: toOptions(item.options),
-      });
-    });
+    const bank = BANKS[dimension];
+    const highQuota = cfg.highOnly && !cfg.highOnly.includes(dimension) ? 0 : cfg.highPerDim;
+    const highPool = bank.filter((q) => q.weight > 1);
+    const plainPool = bank.filter((q) => q.weight === 1);
+
+    if (bank.length < cfg.perDim) {
+      throw new Error(`[${mode}] ${dimension} 题库不足：需要 ${cfg.perDim} 题，实际 ${bank.length} 题`);
+    }
+    if (highPool.length < highQuota) {
+      throw new Error(
+        `[${mode}] ${dimension} 高权重题不足：需要 ${highQuota} 题，实际 ${highPool.length} 题`,
+      );
+    }
+    if (plainPool.length < cfg.perDim - highQuota) {
+      throw new Error(
+        `[${mode}] ${dimension} 普通题不足：需要 ${cfg.perDim - highQuota} 题，实际 ${plainPool.length} 题`,
+      );
+    }
+
+    scored.push(...shuffle(highPool, rng).slice(0, highQuota));
+    scored.push(...shuffle(plainPool, rng).slice(0, cfg.perDim - highQuota));
   });
 
-  return shuffle(picked, rng).map((question, i) => ({ ...question, index: i + 1 }));
+  const pairs = shuffle(LIE_PAIRS, rng).slice(0, cfg.liePairs);
+  if (pairs.length < cfg.liePairs) {
+    throw new Error(`[${mode}] 测谎题对不足：需要 ${cfg.liePairs} 组，实际 ${pairs.length} 组`);
+  }
+  const lieItems = pairs.flat();
+
+  const fillers = shuffle(FILLERS, rng).slice(0, cfg.fillers);
+  if (fillers.length < cfg.fillers) {
+    throw new Error(`[${mode}] 填充题不足：需要 ${cfg.fillers} 题，实际 ${fillers.length} 题`);
+  }
+
+  if (scored.length + lieItems.length + fillers.length !== cfg.total) {
+    throw new Error(
+      `[${mode}] 题量与配置不一致：${scored.length + lieItems.length + fillers.length} != ${cfg.total}`,
+    );
+  }
+
+  const others = shuffle([...scored, ...fillers], rng);
+  const liePositions = placeLiePositions(cfg.total, lieItems.length, rng);
+
+  const slots: (Question | null)[] = new Array(cfg.total).fill(null);
+  liePositions.forEach((pos, i) => {
+    slots[pos] = lieItems[i];
+  });
+
+  let cursor = 0;
+  for (let i = 0; i < cfg.total; i += 1) {
+    if (!slots[i]) {
+      slots[i] = others[cursor];
+      cursor += 1;
+    }
+  }
+
+  return slots.map((question, i) => ({ ...(question as Question), index: i + 1 }));
 }
+
+export const QUESTIONS_BY_MODE: Record<QuizMode, Question[]> = {
+  quick: buildPaper('quick'),
+  normal: buildPaper('normal'),
+  detail: buildPaper('detail'),
+};
 
 function indexQuestions(bank: Question[]): Record<string, Question> {
   return bank.reduce<Record<string, Question>>((acc, question) => {
@@ -592,18 +446,11 @@ function indexQuestions(bank: Question[]): Record<string, Question> {
   }, {});
 }
 
-export const QUESTIONS_BY_MODE: Record<QuizMode, Question[]> = {
-  quick: buildQuestionBank(5),
-  normal: buildQuestionBank(10),
-  detail: buildQuestionBank(20),
-};
-
 export const QUESTION_MAP_BY_MODE: Record<QuizMode, Record<string, Question>> = {
   quick: indexQuestions(QUESTIONS_BY_MODE.quick),
   normal: indexQuestions(QUESTIONS_BY_MODE.normal),
   detail: indexQuestions(QUESTIONS_BY_MODE.detail),
 };
 
-/** 兼容默认（详细卷）导出 */
 export const questions: Question[] = QUESTIONS_BY_MODE.detail;
 export const questionMap: Record<string, Question> = QUESTION_MAP_BY_MODE.detail;

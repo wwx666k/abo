@@ -146,6 +146,15 @@ export default function Result() {
       >
         <h2 className="section-title">五维检测</h2>
 
+        {result.reliabilityFlag && (
+          <div className="mt-3.5 flex gap-2.5 rounded-2xl border border-amber-300/70 bg-amber-50/90 px-4 py-3">
+            <span className="text-[15px] leading-none">⚠️</span>
+            <p className="text-[12.5px] font-medium leading-[1.75] text-amber-700">
+              提示：您有部分题目作答呈现逻辑矛盾，本次结果仅供娱乐参考，建议静下心来重新测试。
+            </p>
+          </div>
+        )}
+
         <RadarChart
           indicators={result.radar}
           accent={theme.accent}
@@ -159,8 +168,15 @@ export default function Result() {
         <ul className="mt-5 flex flex-col gap-[18px]">
           {result.dimensions.map((item, i) => (
             <li key={item.key}>
-              <div className="flex items-baseline justify-between">
-                <span className="text-[14px] font-medium text-ink-700">{item.label}</span>
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="flex items-center gap-1.5">
+                  <span className="text-[14px] font-medium text-ink-700">{item.label}</span>
+                  {item.hasHighWeight && (
+                    <span className="rounded-capsule border border-brand-violet/30 bg-brand-violet/[0.07] px-1.5 py-[1px] text-[9.5px] font-semibold leading-[1.6] text-brand-violet">
+                      核心指标
+                    </span>
+                  )}
+                </span>
                 <span className="text-[16px] font-bold" style={{ color: theme.accent }}>
                   {item.score}
                 </span>

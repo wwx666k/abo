@@ -2,9 +2,9 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DEFAULT_MODE, QUESTIONS_BY_MODE } from '@/data/questions';
 import type { QuizMode } from '@/data/questions';
-import { calculateResult } from '@/utils/calculateResult';
+import { calculateResult, isAnswerValue, normalizeAnswers } from '@/utils/calculateResult';
 import { MAX_HISTORY } from '@/utils/api';
-import type { AnswerMap, HistoryEntry, OptionKey, QuizResult, UserRecord } from '@/types';
+import type { AnswerMap, AnswerValue, HistoryEntry, QuizResult, UserRecord } from '@/types';
 
 interface QuizState {
   username: string;
@@ -16,7 +16,7 @@ interface QuizState {
   startedAt: number | null;
   setUsername: (name: string) => void;
   setMode: (mode: QuizMode) => void;
-  answer: (questionId: string, key: OptionKey) => void;
+  answer: (questionId: string, value: AnswerValue) => void;
   setCurrentIndex: (index: number) => void;
   next: () => void;
   prev: () => void;
@@ -48,8 +48,8 @@ export const useQuizStore = create<QuizState>()(
       // 切换题量会清空当前进度，历史报告保留
       setMode: (mode) => set({ mode, answers: {}, currentIndex: 0, startedAt: null }),
 
-      answer: (questionId, key) =>
-        set((state) => ({ answers: { ...state.answers, [questionId]: key } })),
+      answer: (questionId, value) =>
+        set((state) => ({ answers: { ...state.answers, [questionId]: value } })),
 
       setCurrentIndex: (index) =>
         set((state) => ({ currentIndex: clampIndex(index, state.mode) })),
@@ -89,7 +89,7 @@ export const useQuizStore = create<QuizState>()(
         set({
           username: record.username,
           mode,
-          answers: record.progress?.answers ?? {},
+          answers: normalizeAnswers(record.progress?.answers),
           currentIndex: clampIndex(record.progress?.currentIndex ?? 0, mode),
           history: record.history ?? [],
           result: record.history?.[0]?.result ?? null,
@@ -110,8 +110,9 @@ export const useQuizStore = create<QuizState>()(
 
       toRecord: () => {
         const state = get();
-        const map = QUESTIONS_BY_MODE[state.mode];
-        const answered = map.filter((question) => Boolean(state.answers[question.id])).length;
+        const answered = QUESTIONS_BY_MODE[state.mode].filter((question) =>
+          isAnswerValue(state.answers[question.id]),
+        ).length;
         return {
           username: state.username,
           updatedAt: Date.now(),
@@ -124,7 +125,7 @@ export const useQuizStore = create<QuizState>()(
     }),
     {
       name: 'abo-quiz-storage',
-      version: 3,
+      version: 4,
       partialize: (state) => ({
         username: state.username,
         mode: state.mode,
@@ -134,9 +135,15 @@ export const useQuizStore = create<QuizState>()(
         history: state.history,
         startedAt: state.startedAt,
       }),
+      // 试卷按档位确定性生成，因此只需持久化 mode + answers + 题号即可原样续答
       migrate: (persisted) => {
-        const state = persisted as Partial<QuizState>;
-        return { ...state, mode: state.mode ?? DEFAULT_MODE } as QuizState;
+        const state = persisted as Partial<QuizState> & { answers?: Record<string, unknown> };
+        return {
+          ...state,
+          mode: state.mode ?? DEFAULT_MODE,
+          answers: normalizeAnswers(state.answers),
+          currentIndex: state.currentIndex ?? 0,
+        } as QuizState;
       },
     },
   ),

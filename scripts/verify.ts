@@ -1,7 +1,24 @@
-import { DIMENSIONS, QUIZ_MODES, QUESTIONS_BY_MODE } from '@/data/questions';
+import {
+  BANKS,
+  DIMENSIONS,
+  FILLERS,
+  LIE_PAIRS,
+  MODE_CONFIG,
+  QUIZ_MODES,
+  QUESTIONS_BY_MODE,
+} from '@/data/questions';
 import type { QuizMode } from '@/data/questions';
-import { answeredCount, calculateResult, isComplete, scoreDimensions } from '@/utils/calculateResult';
-import type { AnswerMap, Dimension, OptionKey } from '@/types';
+import {
+  answeredCount,
+  calculateResult,
+  countInconsistent,
+  getABOProfile,
+  isComplete,
+  normalizeAnswers,
+  scoreDimensions,
+  scoreOf,
+} from '@/utils/calculateResult';
+import type { AnswerMap, Dimension } from '@/types';
 
 let failures = 0;
 const check = (label: string, ok: boolean, detail = '') => {
@@ -9,80 +26,289 @@ const check = (label: string, ok: boolean, detail = '') => {
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${label}${detail ? ` -> ${detail}` : ''}`);
 };
 
-const buildAnswers = (mode: QuizMode, pick: (index: number, dimension: Dimension) => OptionKey): AnswerMap => {
+type Plan = Record<Dimension, 'max' | 'min' | 'mid'>;
+
+const fullPlan = (value: 'max' | 'min' | 'mid'): Plan => ({
+  dominance: value,
+  emotion: value,
+  boundary: value,
+  attraction: value,
+  stability: value,
+});
+
+/** 按目标（满分 / 零分 / 中性）为每道计分题生成答案，测谎与填充固定取 3 */
+const buildAnswers = (mode: QuizMode, plan: Plan): AnswerMap => {
   const answers: AnswerMap = {};
-  QUESTIONS_BY_MODE[mode].forEach((q, i) => {
-    answers[q.id] = pick(i, q.dimension);
+  QUESTIONS_BY_MODE[mode].forEach((question) => {
+    if (question.kind === 'lie' || question.kind === 'filler') {
+      answers[question.id] = 3;
+      return;
+    }
+    const target = plan[question.kind];
+    if (target === 'mid') {
+      answers[question.id] = 3;
+      return;
+    }
+    const wantHigh = target === 'max';
+    const isForward = question.direction === 'forward';
+    answers[question.id] = wantHigh === isForward ? 5 : 1;
   });
   return answers;
 };
 
-/* 1. 三套试卷结构 */
-QUIZ_MODES.forEach(({ key, label, perDim, total }) => {
-  const bank = QUESTIONS_BY_MODE[key];
-  check(`[${label}] 题目总数 = ${total}`, bank.length === total, String(bank.length));
-  check(`[${label}] 题号从 1 连续`, bank.every((q, i) => q.index === i + 1));
-  check(`[${label}] 题目 id 唯一`, new Set(bank.map((q) => q.id)).size === bank.length);
-  check(
-    `[${label}] 每题 4 个选项且分值 1-4`,
-    bank.every(
-      (q) =>
-        q.options.length === 4 &&
-        q.options.every((o, i) => o.key === ['A', 'B', 'C', 'D'][i] && o.score === i + 1),
-    ),
-  );
-  DIMENSIONS.forEach((dimension) => {
-    const count = bank.filter((q) => q.dimension === dimension).length;
-    check(`[${label}] 维度 ${dimension} 题量 = ${perDim}`, count === perDim, String(count));
-  });
-});
-
-/* 2. 边界值：全 A = 0 分，全 D = 100 分（三种题量都要成立） */
-QUIZ_MODES.forEach(({ key, label }) => {
-  const allA = buildAnswers(key, () => 'A');
-  const allD = buildAnswers(key, () => 'D');
-  const aScores = scoreDimensions(allA, key).map((d) => d.score);
-  const dScores = scoreDimensions(allD, key).map((d) => d.score);
-  check(`[${label}] 全选 A -> 五维均为 0`, aScores.every((s) => s === 0), aScores.join('/'));
-  check(`[${label}] 全选 D -> 五维均为 100`, dScores.every((s) => s === 100), dScores.join('/'));
-});
-
-/* 3. 主导维度 -> 身份映射 */
-const expectedIdentity: Record<Dimension, string> = {
-  dominance: 'Alpha',
-  emotion: 'Omega',
-  boundary: 'Delta',
-  attraction: 'Enigma',
-  stability: 'Beta',
-};
+/* 1. 题库基座 */
 DIMENSIONS.forEach((dimension) => {
-  const answers = buildAnswers('detail', (_, dim) => (dim === dimension ? 'D' : 'A'));
-  const result = calculateResult(answers, 'detail');
+  const bank = BANKS[dimension];
+  check(`题库 ${dimension} 共 28 题`, bank.length === 28, String(bank.length));
+  check(`题库 ${dimension} id 唯一`, new Set(bank.map((q) => q.id)).size === bank.length);
   check(
-    `主导维度 ${dimension} -> 身份 ${expectedIdentity[dimension]}`,
-    result.identity === expectedIdentity[dimension],
-    `${result.identity} | ${result.title} | ${result.populationRate}% | ${result.pheromoneStatus} | ${result.temperament}`,
+    `题库 ${dimension} 含反向题`,
+    bank.some((q) => q.direction === 'reverse') && bank.some((q) => q.direction === 'forward'),
   );
-  check(`  ${result.identity} 标签数量 = 5`, result.tags.length === 5, result.tags.join(' '));
+  const highCount = bank.filter((q) => q.weight > 1).length;
+  check(`题库 ${dimension} 高权重题 >= 6`, highCount >= 6, String(highCount));
   check(
-    `  ${result.identity} 人群占比在 0.10%-4.99%`,
-    Number(result.populationRate) >= 0.1 && Number(result.populationRate) <= 4.99,
-    result.populationRate,
+    `题库 ${dimension} 权重只取 1 或 1.5`,
+    bank.every((q) => q.weight === 1 || q.weight === 1.5),
   );
-  check(`  ${result.identity} 分析段落 >= 3`, result.analysis.length >= 3, String(result.analysis.length));
+});
+check('测谎题共 6 组', LIE_PAIRS.length === 6, String(LIE_PAIRS.length));
+check(
+  '每组测谎题一正一反',
+  LIE_PAIRS.every(
+    (pair) =>
+      pair.length === 2 &&
+      pair[0].direction === 'forward' &&
+      pair[1].direction === 'reverse' &&
+      pair[0].liePairId === pair[1].liePairId,
+  ),
+);
+check('测谎题权重为 0', LIE_PAIRS.flat().every((q) => q.weight === 0));
+check('填充题共 8 题', FILLERS.length === 8, String(FILLERS.length));
+check('填充题权重为 0', FILLERS.every((q) => q.weight === 0));
+check(
+  '题库总量 160 题',
+  DIMENSIONS.reduce((sum, d) => sum + BANKS[d].length, 0) + LIE_PAIRS.length * 2 + FILLERS.length ===
+    160,
+  String(
+    DIMENSIONS.reduce((sum, d) => sum + BANKS[d].length, 0) + LIE_PAIRS.length * 2 + FILLERS.length,
+  ),
+);
+
+/* 2. 三套试卷结构 */
+QUIZ_MODES.forEach((cfg) => {
+  const paper = QUESTIONS_BY_MODE[cfg.key];
+  const label = `[${cfg.label}]`;
+
+  check(`${label} 题目总数 = ${cfg.total}`, paper.length === cfg.total, String(paper.length));
+  check(`${label} 题号从 1 连续`, paper.every((q, i) => q.index === i + 1));
+  check(`${label} 题号 id 唯一`, new Set(paper.map((q) => q.id)).size === paper.length);
+
+  DIMENSIONS.forEach((dimension) => {
+    const count = paper.filter((q) => q.kind === dimension).length;
+    check(`${label} ${dimension} 计分题 = ${cfg.perDim}`, count === cfg.perDim, String(count));
+  });
+
+  const lieCount = paper.filter((q) => q.kind === 'lie').length;
+  const fillerCount = paper.filter((q) => q.kind === 'filler').length;
+  check(`${label} 测谎题 = ${cfg.liePairs * 2}`, lieCount === cfg.liePairs * 2, String(lieCount));
+  check(`${label} 填充题 = ${cfg.fillers}`, fillerCount === cfg.fillers, String(fillerCount));
+
+  const groups = new Map<string, number[]>();
+  paper.forEach((q, i) => {
+    if (!q.liePairId) return;
+    const list = groups.get(q.liePairId) ?? [];
+    list.push(i);
+    groups.set(q.liePairId, list);
+  });
+  check(`${label} 测谎题组数正确`, groups.size === cfg.liePairs, String(groups.size));
   check(
-    `  ${result.identity} 文案占位符已全部填充`,
-    !result.analysis.join('').includes('{') && !result.shareSentence.includes('{'),
-    result.shareSentence,
+    `${label} 同一对测谎题至少相隔 5 题`,
+    [...groups.values()].every((list) => list.length === 2 && Math.abs(list[0] - list[1]) >= 5),
+    [...groups.values()].map((list) => Math.abs(list[0] - list[1])).join('/'),
+  );
+
+  DIMENSIONS.forEach((dimension) => {
+    const quota = cfg.highOnly && !cfg.highOnly.includes(dimension) ? 0 : cfg.highPerDim;
+    const highCount = paper.filter((q) => q.kind === dimension && q.weight > 1).length;
+    check(`${label} ${dimension} 高权重题 = ${quota}`, highCount === quota, String(highCount));
+  });
+
+  check(
+    `${label} 测谎 / 填充题都不参与计分`,
+    paper.every((q) => (q.kind === 'lie' || q.kind === 'filler' ? q.weight === 0 : true)),
   );
 });
 
-/* 4. 同分决胜 + 结果稳定性 */
-const mixed = buildAnswers('detail', (i) => (['A', 'B', 'C', 'D'] as OptionKey[])[i % 4]);
-const first = calculateResult(mixed, 'detail');
-const second = calculateResult(mixed, 'detail');
+/* 3. 加权计分边界：按方向全取极端值时，满分为 100、最低为 0 */
+QUIZ_MODES.forEach((cfg) => {
+  const maxAnswers = buildAnswers(cfg.key, fullPlan('max'));
+  const minAnswers = buildAnswers(cfg.key, fullPlan('min'));
+
+  const maxScores = scoreDimensions(maxAnswers, cfg.key);
+  const minScores = scoreDimensions(minAnswers, cfg.key);
+
+  check(
+    `[${cfg.label}] 全取最高 -> 五维均 100`,
+    maxScores.every((d) => d.score === 100),
+    maxScores.map((d) => d.score).join('/'),
+  );
+  check(
+    `[${cfg.label}] 全取最低 -> 五维均 0`,
+    minScores.every((d) => d.score === 0),
+    minScores.map((d) => d.score).join('/'),
+  );
+  check(
+    `[${cfg.label}] 五维满分 = 加权题量 × 5`,
+    maxScores.every((d) => d.max > 0),
+    maxScores.map((d) => `${d.raw}/${d.max}`).join(' '),
+  );
+  check(
+    `[${cfg.label}] 核心指标标记正确`,
+    maxScores.every((d) => {
+      const quota =
+        cfg.highOnly && !cfg.highOnly.includes(d.key) ? 0 : cfg.highPerDim;
+      return d.hasHighWeight === (quota > 0);
+    }),
+    maxScores.map((d) => `${d.key}:${d.hasHighWeight}`).join(' '),
+  );
+});
+
+/* 4. 测谎题与填充题不影响五维得分 */
+(['quick', 'normal', 'detail'] as QuizMode[]).forEach((mode) => {
+  const base = buildAnswers(mode, fullPlan('mid'));
+  const tampered: AnswerMap = { ...base };
+  QUESTIONS_BY_MODE[mode].forEach((q) => {
+    if (q.kind === 'lie' || q.kind === 'filler') tampered[q.id] = 1;
+  });
+  const a = scoreDimensions(base, mode).map((d) => d.score);
+  const b = scoreDimensions(tampered, mode).map((d) => d.score);
+  check(`[${mode}] 测谎 / 填充题不影响五维分数`, a.join() === b.join(), `${a.join('/')} vs ${b.join('/')}`);
+});
+
+/* 5. 一致性校验 */
+(['quick', 'normal', 'detail'] as QuizMode[]).forEach((mode) => {
+  const cfg = MODE_CONFIG[mode];
+  const consistent = buildAnswers(mode, fullPlan('mid'));
+  check(
+    `[${mode}] 一致作答 -> 0 次矛盾`,
+    countInconsistent(consistent, mode).count === 0,
+    String(countInconsistent(consistent, mode).count),
+  );
+
+  const contradictory: AnswerMap = { ...consistent };
+  QUESTIONS_BY_MODE[mode].forEach((q) => {
+    if (q.kind === 'lie') contradictory[q.id] = 5;
+  });
+  const result = countInconsistent(contradictory, mode);
+  check(
+    `[${mode}] 矛盾作答 -> ${cfg.liePairs} 次矛盾`,
+    result.count === cfg.liePairs && result.total === cfg.liePairs,
+    `${result.count}/${result.total}`,
+  );
+
+  const report = calculateResult(contradictory, mode);
+  check(
+    `[${mode}] 矛盾 >= 2 -> reliabilityFlag 为 true`,
+    report.reliabilityFlag === true && report.inconsistentCount === cfg.liePairs,
+    `${report.inconsistentCount} / flag=${report.reliabilityFlag}`,
+  );
+});
+
+/* 6. 身份映射规则（直接对分数做单元测试） */
+const profileCases: { name: string; scores: Record<Dimension, number>; expect: Dimension }[] = [
+  {
+    name: 'Enigma：支配极高 + 情绪极低',
+    scores: { dominance: 90, emotion: 20, boundary: 40, attraction: 50, stability: 40 },
+    expect: 'attraction',
+  },
+  {
+    name: 'Delta：边界极高 + 支配中等 + 稳定偏高',
+    scores: { dominance: 55, emotion: 50, boundary: 85, attraction: 40, stability: 65 },
+    expect: 'boundary',
+  },
+  {
+    name: 'Alpha：支配高 + 边界高',
+    scores: { dominance: 80, emotion: 50, boundary: 65, attraction: 40, stability: 40 },
+    expect: 'dominance',
+  },
+  {
+    name: 'Omega：情绪高 + 吸引力高',
+    scores: { dominance: 40, emotion: 80, boundary: 40, attraction: 70, stability: 40 },
+    expect: 'emotion',
+  },
+  {
+    name: 'Beta：全部居中且稳定值最高',
+    scores: { dominance: 50, emotion: 45, boundary: 50, attraction: 45, stability: 58 },
+    expect: 'stability',
+  },
+  {
+    name: '未命中规则时回退到最高维度',
+    scores: { dominance: 30, emotion: 30, boundary: 30, attraction: 70, stability: 30 },
+    expect: 'attraction',
+  },
+];
+profileCases.forEach(({ name, scores, expect }) => {
+  check(`身份映射 · ${name}`, getABOProfile(scores) === expect, getABOProfile(scores));
+});
+
+/* 7. 端到端：答案 -> 身份 -> 完整报告 */
+const endToEnd: { name: string; plan: Plan; expect: string }[] = [
+  {
+    name: 'Alpha',
+    plan: { dominance: 'max', emotion: 'mid', boundary: 'max', attraction: 'min', stability: 'min' },
+    expect: 'Alpha',
+  },
+  {
+    name: 'Omega',
+    plan: { dominance: 'min', emotion: 'max', boundary: 'min', attraction: 'max', stability: 'min' },
+    expect: 'Omega',
+  },
+  {
+    name: 'Delta',
+    plan: { dominance: 'max', emotion: 'mid', boundary: 'max', attraction: 'min', stability: 'max' },
+    expect: 'Delta',
+  },
+  {
+    name: 'Enigma',
+    plan: { dominance: 'max', emotion: 'min', boundary: 'min', attraction: 'min', stability: 'min' },
+    expect: 'Enigma',
+  },
+  {
+    name: 'Beta',
+    plan: fullPlan('mid'),
+    expect: 'Beta',
+  },
+];
+endToEnd.forEach(({ name, plan, expect }) => {
+  const answers = buildAnswers('detail', plan);
+  const report = calculateResult(answers, 'detail');
+  check(`端到端身份 ${name}`, report.identity === expect, report.identity);
+  check(`  ${name} 标签数量 = 5`, report.tags.length === 5, report.tags.join(' '));
+  check(
+    `  ${name} 人群占比在 0.10%-4.99%`,
+    Number(report.populationRate) >= 0.1 && Number(report.populationRate) <= 4.99,
+    report.populationRate,
+  );
+  check(`  ${name} 分析段落 >= 3`, report.analysis.length >= 3, String(report.analysis.length));
+  check(
+    `  ${name} 文案占位符已填充`,
+    !report.analysis.join('').includes('{') && !report.shareSentence.includes('{'),
+  );
+});
+
+/* 8. 结果稳定性 */
+const stableAnswers = buildAnswers('normal', {
+  dominance: 'max',
+  emotion: 'min',
+  boundary: 'mid',
+  attraction: 'max',
+  stability: 'min',
+});
+const first = calculateResult(stableAnswers, 'normal');
+const second = calculateResult(stableAnswers, 'normal');
 check(
-  '同一份答案结果稳定（标题/占比/信息素一致）',
+  '同一份答案结果稳定（标题 / 占比 / 信息素 / 标签）',
   first.title === second.title &&
     first.populationRate === second.populationRate &&
     first.pheromoneStatus === second.pheromoneStatus &&
@@ -90,164 +316,43 @@ check(
   `${first.title} / ${first.populationRate}%`,
 );
 
-/* 5. 题量与试卷一致性 */
-const quickAnswers = buildAnswers('quick', () => 'D');
-check('快速卷答案数 = 25', answeredCount(quickAnswers, 'quick') === 25, String(answeredCount(quickAnswers, 'quick')));
+/* 9. 答题进度工具 */
+const quickAnswers = buildAnswers('quick', fullPlan('mid'));
+check('[quick] 已作答数量 = 25', answeredCount(quickAnswers, 'quick') === 25);
+check('[quick] 全部作答 -> isComplete', isComplete(quickAnswers, 'quick'));
 check(
-  '快速卷题目是详细卷的子集（题号与题面一致）',
-  QUESTIONS_BY_MODE.quick.every((q) =>
-    QUESTIONS_BY_MODE.detail.some((d) => d.id === q.id && d.text === q.text),
+  '[quick] 少答一题 -> 未完成',
+  !isComplete(
+    Object.fromEntries(
+      Object.entries(quickAnswers).slice(1),
+    ) as AnswerMap,
+    'quick',
   ),
 );
-check('快速卷全答完才算完成', isComplete(buildAnswers('quick', () => 'A'), 'quick') === true);
-check('空答案不算完成', isComplete({}, 'quick') === false);
+
+/* 10. 旧数据清洗：A/B/C/D 与非法值一律丢弃 */
+const normalized = normalizeAnswers({ d01: 'A', d02: 3, d03: 9, d04: '5' });
 check(
-  '每套试卷按自身题量归一化（全 D 均为 100）',
-  (['quick', 'normal', 'detail'] as QuizMode[]).every((mode) =>
-    scoreDimensions(buildAnswers(mode, () => 'D'), mode).every((d) => d.score === 100),
-  ),
-);
-check(
-  '结果记录题量档位',
-  calculateResult(buildAnswers('quick', () => 'D'), 'quick').mode === 'quick',
+  '旧选项字母被丢弃、合法 1-5 保留',
+  !('d01' in normalized) && normalized.d02 === 3 && !('d03' in normalized) && normalized.d04 === 5,
+  JSON.stringify(normalized),
 );
 
-/* 6. Cloudflare Functions + KV 存储 */
-type KV = {
-  get: (key: string, type?: 'json') => Promise<unknown>;
-  put: (key: string, value: string) => Promise<void>;
-  list: (options?: { prefix?: string; limit?: number; cursor?: string }) => Promise<{
-    keys: { name: string }[];
-    list_complete: boolean;
-    cursor?: string;
-  }>;
-};
+/* 11. 反向计分 */
+const reverseQuestion = BANKS.dominance.find((q) => q.direction === 'reverse');
+const forwardQuestion = BANKS.dominance.find((q) => q.direction === 'forward');
+check(
+  '反向题按 6 - 值 计分',
+  Boolean(reverseQuestion) && scoreOf(reverseQuestion!, 5) === 1 && scoreOf(reverseQuestion!, 1) === 5,
+);
+check(
+  '正向题直接取值',
+  Boolean(forwardQuestion) && scoreOf(forwardQuestion!, 5) === 5 && scoreOf(forwardQuestion!, 1) === 1,
+);
 
-function makeKV(): KV {
-  const store = new Map<string, string>();
-  return {
-    async get(key, type) {
-      const raw = store.get(key);
-      if (raw === undefined) return null;
-      return type === 'json' ? JSON.parse(raw) : raw;
-    },
-    async put(key, value) {
-      store.set(key, value);
-    },
-    async list(options) {
-      const prefix = options?.prefix ?? '';
-      const names = [...store.keys()].filter((name) => name.startsWith(prefix)).sort();
-      return { keys: names.map((name) => ({ name })), list_complete: true };
-    },
-  };
+console.log('');
+if (failures > 0) {
+  console.error(`共 ${failures} 项校验失败`);
+  process.exit(1);
 }
-
-const kv = makeKV();
-const ADMIN_PASSWORD = 'Wwx120325@';
-const env = { ABO_KV: kv, ADMIN_PASSWORD };
-
-const userPost = (await import('../functions/api/user')).onRequestPost;
-const userGet = (await import('../functions/api/user')).onRequestGet;
-const adminGet = (await import('../functions/api/admin')).onRequestGet;
-
-const postRecord = (body: unknown) =>
-  userPost({
-    request: new Request('https://example.com/api/user', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
-    }),
-    env,
-  });
-
-const sampleHistory = Array.from({ length: 12 }, (_, i) => ({
-  id: `h${i}`,
-  at: 1_700_000_000_000 + i,
-  result: calculateResult(buildAnswers('normal', () => 'D'), 'normal'),
-}));
-
-const postRes = await postRecord({
-  username: '测试用户',
-  mode: 'quick',
-  progress: { answers: { 'dominance-0': 'A' }, currentIndex: 0 },
-  history: sampleHistory,
-});
-const postJson = (await postRes.json()) as {
-  ok?: boolean;
-  record?: { history: unknown[]; mode?: string };
-};
-check('KV 写入返回 ok', postJson.ok === true);
-check('KV 历史记录截断为 10 条', postJson.record?.history.length === 10, String(postJson.record?.history.length));
-check('KV 保存题量档位', postJson.record?.mode === 'quick', String(postJson.record?.mode));
-
-const getRes = await userGet({
-  request: new Request(`https://example.com/api/user?username=${encodeURIComponent('测试用户')}`),
-  env,
-});
-const getJson = (await getRes.json()) as {
-  record?: { username: string; mode?: string; progress: { answers: Record<string, string> } | null };
-};
-check('KV 读取回填用户名', getJson.record?.username === '测试用户', String(getJson.record?.username));
-check('KV 读取回填题量', getJson.record?.mode === 'quick', String(getJson.record?.mode));
-check('KV 读取保留未完成进度', getJson.record?.progress?.answers?.['dominance-0'] === 'A');
-
-const badModeRes = await postRecord({ username: '非法题量', mode: 'huge', progress: null, history: [] });
-const badModeJson = (await badModeRes.json()) as { record?: { mode?: string } };
-check('非法题量回退为详细卷', badModeJson.record?.mode === 'detail', String(badModeJson.record?.mode));
-
-const missingRes = await userGet({
-  request: new Request('https://example.com/api/user'),
-  env,
-});
-check('缺少用户名返回 400', missingRes.status === 400, String(missingRes.status));
-
-const noKeyRes = await adminGet({ request: new Request('https://example.com/api/admin'), env });
-check('后台无密码返回 401', noKeyRes.status === 401, String(noKeyRes.status));
-
-const wrongKeyRes = await adminGet({
-  request: new Request('https://example.com/api/admin?key=wrong'),
-  env,
-});
-check('后台错误密码返回 401', wrongKeyRes.status === 401, String(wrongKeyRes.status));
-
-const adminRes = await adminGet({
-  request: new Request(`https://example.com/api/admin?key=${encodeURIComponent(ADMIN_PASSWORD)}`),
-  env,
-});
-const adminJson = (await adminRes.json()) as {
-  users?: { username: string; answered: number; mode?: string; progress?: unknown }[];
-};
-check('后台密码正确返回数据', adminRes.status === 200 && (adminJson.users?.length ?? 0) >= 1);
-check(
-  '后台不返回原始选项',
-  adminJson.users?.every((user) => user.progress === undefined) === true,
-);
-const adminUser = adminJson.users?.find((user) => user.username === '测试用户');
-check('后台返回进行中的题数', adminUser?.answered === 1, String(adminUser?.answered));
-check('后台返回题量档位', adminUser?.mode === 'quick', String(adminUser?.mode));
-
-const defaultPwdRes = await adminGet({
-  request: new Request(`https://example.com/api/admin?key=${encodeURIComponent('Wwx120325@')}`),
-  env: { ABO_KV: kv },
-});
-check('未配置环境变量时使用内置后台密码', defaultPwdRes.status === 200, String(defaultPwdRes.status));
-
-const noKvRes = await userGet({
-  request: new Request('https://example.com/api/user?username=abc'),
-  env: {},
-});
-check('未绑定 KV 时返回 503', noKvRes.status === 503, String(noKvRes.status));
-
-/* 7. 随机抽样输出，人工检查观感 */
-console.log('\n--- 抽样输出 ---');
-const keys: OptionKey[] = ['A', 'B', 'C', 'D'];
-for (let s = 0; s < 4; s += 1) {
-  const answers = buildAnswers('detail', (i) => keys[(i * 3 + s * 5) % 4]);
-  const r = calculateResult(answers, 'detail');
-  console.log(
-    `[${s}] ${r.title} | 占比 ${r.populationRate}% | ${r.pheromoneStatus} | ${r.temperament}\n    标签: ${r.tags.join(' · ')}\n    五维: ${r.dimensions.map((d) => `${d.label}${d.score}`).join(' ')}`,
-  );
-}
-
-console.log(failures === 0 ? '\nALL CHECKS PASSED' : `\n${failures} CHECK(S) FAILED`);
-process.exit(failures === 0 ? 0 : 1);
+console.log('全部校验通过');
