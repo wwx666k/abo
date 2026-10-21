@@ -11,8 +11,20 @@ export type ScoreBand = 'high' | 'mid' | 'low';
 /** 题量档位：快速 25 / 常规 50 / 详细 100 */
 export type QuizMode = 'quick' | 'normal' | 'detail';
 
-/** 五点量表：1 完全不符合 → 5 完全符合 */
+/** 五点量表：1 完全不符合 → 5 完全符合；情景题取其中 1~4 */
 export type AnswerValue = 1 | 2 | 3 | 4 | 5;
+
+/** 题型：情景四选一 / 五点量表 */
+export type QuestionFormat = 'scenario' | 'likert';
+
+export type OptionKey = 'A' | 'B' | 'C' | 'D';
+
+export interface QuestionOption {
+  key: OptionKey;
+  text: string;
+  /** 情景题分值：A=1 / B=2 / C=3 / D=4 */
+  value: 1 | 2 | 3 | 4;
+}
 
 export interface Question {
   id: string;
@@ -20,6 +32,9 @@ export interface Question {
   index: number;
   text: string;
   kind: ItemKind;
+  /** 情景题带四个选项，五点量表不带 */
+  format: QuestionFormat;
+  options?: QuestionOption[];
   direction: Direction;
   /** 计分权重：1 普通 / 1.5 高关联 / 0 不计分（测谎与填充） */
   weight: number;
@@ -124,6 +139,8 @@ export interface HistoryEntry {
 export interface UserRecord {
   username: string;
   updatedAt: number;
+  /** 试卷结构版本，结构变更后旧进度自动作废 */
+  paperVersion?: number;
   /** 当前题量档位 */
   mode: QuizMode;
   /** 未完成的答题进度；生成结果后置空 */

@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { DEFAULT_MODE, QUESTIONS_BY_MODE } from '@/data/questions';
+import { DEFAULT_MODE, PAPER_VERSION, QUESTIONS_BY_MODE } from '@/data/questions';
 import type { QuizMode } from '@/data/questions';
-import { calculateResult, isAnswerValue, normalizeAnswers } from '@/utils/calculateResult';
+import { calculateResult, isAnswerFor, normalizeAnswers } from '@/utils/calculateResult';
 import { MAX_HISTORY } from '@/utils/api';
 import type { AnswerMap, AnswerValue, HistoryEntry, QuizResult, UserRecord } from '@/types';
 
@@ -86,11 +86,13 @@ export const useQuizStore = create<QuizState>()(
         // 新用户档案没有数据时，保留用户在首页刚选的题量
         const hasData = Boolean(record.progress) || (record.history?.length ?? 0) > 0;
         const mode = hasData ? (record.mode ?? DEFAULT_MODE) : get().mode;
+        // 试卷结构变更后，旧版进度与当前题目对不上，直接作废
+        const progress = record.paperVersion === PAPER_VERSION ? record.progress : null;
         set({
           username: record.username,
           mode,
-          answers: normalizeAnswers(record.progress?.answers),
-          currentIndex: clampIndex(record.progress?.currentIndex ?? 0, mode),
+          answers: normalizeAnswers(progress?.answers),
+          currentIndex: clampIndex(progress?.currentIndex ?? 0, mode),
           history: record.history ?? [],
           result: record.history?.[0]?.result ?? null,
         });
@@ -111,11 +113,12 @@ export const useQuizStore = create<QuizState>()(
       toRecord: () => {
         const state = get();
         const answered = QUESTIONS_BY_MODE[state.mode].filter((question) =>
-          isAnswerValue(state.answers[question.id]),
+          isAnswerFor(question, state.answers[question.id]),
         ).length;
         return {
           username: state.username,
           updatedAt: Date.now(),
+          paperVersion: PAPER_VERSION,
           mode: state.mode,
           progress:
             answered > 0 ? { answers: state.answers, currentIndex: state.currentIndex } : null,
@@ -125,7 +128,7 @@ export const useQuizStore = create<QuizState>()(
     }),
     {
       name: 'abo-quiz-storage',
-      version: 4,
+      version: 5,
       partialize: (state) => ({
         username: state.username,
         mode: state.mode,
@@ -136,13 +139,15 @@ export const useQuizStore = create<QuizState>()(
         startedAt: state.startedAt,
       }),
       // 试卷按档位确定性生成，因此只需持久化 mode + answers + 题号即可原样续答
-      migrate: (persisted) => {
+      migrate: (persisted, version) => {
         const state = persisted as Partial<QuizState> & { answers?: Record<string, unknown> };
+        // v5 起试卷改为混合题型，旧答案与当前题目不再对应
+        const keepAnswers = version >= 5;
         return {
           ...state,
           mode: state.mode ?? DEFAULT_MODE,
-          answers: normalizeAnswers(state.answers),
-          currentIndex: state.currentIndex ?? 0,
+          answers: keepAnswers ? normalizeAnswers(state.answers) : {},
+          currentIndex: keepAnswers ? (state.currentIndex ?? 0) : 0,
         } as QuizState;
       },
     },

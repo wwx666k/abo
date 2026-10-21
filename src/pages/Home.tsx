@@ -6,6 +6,7 @@ import {
   DIMENSIONS,
   DIMENSION_DESC,
   DIMENSION_LABELS,
+  PAPER_VERSION,
   QUIZ_MODES,
 } from '@/data/questions';
 import type { QuizMode } from '@/types';
@@ -59,7 +60,8 @@ export default function Home() {
     setLoading(false);
 
     const recordMode = record.mode ?? DEFAULT_MODE;
-    const answered = record.progress ? answeredCount(record.progress.answers, recordMode) : 0;
+    const validProgress = record.paperVersion === PAPER_VERSION ? record.progress : null;
+    const answered = validProgress ? answeredCount(validProgress.answers, recordMode) : 0;
     if (answered > 0) navigate('/quiz');
     else if (record.history.length > 0) navigate('/me');
     else {

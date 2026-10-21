@@ -1,11 +1,12 @@
 import {
-  BANKS,
   DIMENSIONS,
   FILLERS,
   LIE_PAIRS,
+  LIKERT_BANKS,
   MODE_CONFIG,
   QUIZ_MODES,
   QUESTIONS_BY_MODE,
+  SCENARIO_BANKS,
 } from '@/data/questions';
 import type { QuizMode } from '@/data/questions';
 import {
@@ -51,25 +52,45 @@ const buildAnswers = (mode: QuizMode, plan: Plan): AnswerMap => {
     }
     const wantHigh = target === 'max';
     const isForward = question.direction === 'forward';
-    answers[question.id] = wantHigh === isForward ? 5 : 1;
+    const maxValue = question.format === 'scenario' ? 4 : 5;
+    answers[question.id] = wantHigh === isForward ? maxValue : 1;
   });
   return answers;
 };
 
 /* 1. 题库基座 */
 DIMENSIONS.forEach((dimension) => {
-  const bank = BANKS[dimension];
-  check(`题库 ${dimension} 共 28 题`, bank.length === 28, String(bank.length));
-  check(`题库 ${dimension} id 唯一`, new Set(bank.map((q) => q.id)).size === bank.length);
+  const bank = LIKERT_BANKS[dimension];
+  check(`量表题库 ${dimension} 共 28 题`, bank.length === 28, String(bank.length));
+  check(`量表题库 ${dimension} id 唯一`, new Set(bank.map((q) => q.id)).size === bank.length);
+  check(`量表题库 ${dimension} 题型标记正确`, bank.every((q) => q.format === 'likert'));
   check(
-    `题库 ${dimension} 含反向题`,
+    `量表题库 ${dimension} 含反向题`,
     bank.some((q) => q.direction === 'reverse') && bank.some((q) => q.direction === 'forward'),
   );
   const highCount = bank.filter((q) => q.weight > 1).length;
-  check(`题库 ${dimension} 高权重题 >= 6`, highCount >= 6, String(highCount));
+  check(`量表题库 ${dimension} 高权重题 >= 6`, highCount >= 6, String(highCount));
   check(
-    `题库 ${dimension} 权重只取 1 或 1.5`,
+    `量表题库 ${dimension} 权重只取 1 或 1.5`,
     bank.every((q) => q.weight === 1 || q.weight === 1.5),
+  );
+
+  const scenarioBank = SCENARIO_BANKS[dimension];
+  check(`情景题库 ${dimension} 共 24 题`, scenarioBank.length === 24, String(scenarioBank.length));
+  check(
+    `情景题库 ${dimension} 每题四个选项`,
+    scenarioBank.every((q) => q.format === 'scenario' && q.options?.length === 4),
+  );
+  check(
+    `情景题库 ${dimension} 选项分值 A=1 B=2 C=3 D=4`,
+    scenarioBank.every(
+      (q) =>
+        q.options?.map((option) => `${option.key}${option.value}`).join() === 'A1,B2,C3,D4',
+    ),
+  );
+  check(
+    `情景题库 ${dimension} 全部正向且权重为 1`,
+    scenarioBank.every((q) => q.direction === 'forward' && q.weight === 1),
   );
 });
 check('测谎题共 6 组', LIE_PAIRS.length === 6, String(LIE_PAIRS.length));
@@ -86,14 +107,14 @@ check(
 check('测谎题权重为 0', LIE_PAIRS.flat().every((q) => q.weight === 0));
 check('填充题共 8 题', FILLERS.length === 8, String(FILLERS.length));
 check('填充题权重为 0', FILLERS.every((q) => q.weight === 0));
-check(
-  '题库总量 160 题',
-  DIMENSIONS.reduce((sum, d) => sum + BANKS[d].length, 0) + LIE_PAIRS.length * 2 + FILLERS.length ===
-    160,
-  String(
-    DIMENSIONS.reduce((sum, d) => sum + BANKS[d].length, 0) + LIE_PAIRS.length * 2 + FILLERS.length,
-  ),
-);
+const totalItems =
+  DIMENSIONS.reduce(
+    (sum, d) => sum + LIKERT_BANKS[d].length + SCENARIO_BANKS[d].length,
+    0,
+  ) +
+  LIE_PAIRS.length * 2 +
+  FILLERS.length;
+check('题库总量 280 题', totalItems === 280, String(totalItems));
 
 /* 2. 三套试卷结构 */
 QUIZ_MODES.forEach((cfg) => {
@@ -107,12 +128,42 @@ QUIZ_MODES.forEach((cfg) => {
   DIMENSIONS.forEach((dimension) => {
     const count = paper.filter((q) => q.kind === dimension).length;
     check(`${label} ${dimension} 计分题 = ${cfg.perDim}`, count === cfg.perDim, String(count));
+
+    const scenarioCount = paper.filter(
+      (q) => q.kind === dimension && q.format === 'scenario',
+    ).length;
+    const likertCount = paper.filter((q) => q.kind === dimension && q.format === 'likert').length;
+    check(
+      `${label} ${dimension} 情景题 = ${cfg.scenarioPerDim}`,
+      scenarioCount === cfg.scenarioPerDim,
+      String(scenarioCount),
+    );
+    check(
+      `${label} ${dimension} 量表题 = ${cfg.likertPerDim}`,
+      likertCount === cfg.likertPerDim,
+      String(likertCount),
+    );
   });
+
+  check(
+    `${label} 同时包含两种题型`,
+    paper.some((q) => q.format === 'scenario') && paper.some((q) => q.format === 'likert'),
+  );
+  check(
+    `${label} 情景题都带四个选项、量表题都不带选项`,
+    paper.every((q) =>
+      q.format === 'scenario' ? q.options?.length === 4 : q.options === undefined,
+    ),
+  );
 
   const lieCount = paper.filter((q) => q.kind === 'lie').length;
   const fillerCount = paper.filter((q) => q.kind === 'filler').length;
   check(`${label} 测谎题 = ${cfg.liePairs * 2}`, lieCount === cfg.liePairs * 2, String(lieCount));
   check(`${label} 填充题 = ${cfg.fillers}`, fillerCount === cfg.fillers, String(fillerCount));
+  check(
+    `${label} 测谎 / 填充题都是五点量表`,
+    paper.every((q) => (q.kind === 'lie' || q.kind === 'filler' ? q.format === 'likert' : true)),
+  );
 
   const groups = new Map<string, number[]>();
   paper.forEach((q, i) => {
@@ -159,8 +210,8 @@ QUIZ_MODES.forEach((cfg) => {
     minScores.map((d) => d.score).join('/'),
   );
   check(
-    `[${cfg.label}] 五维满分 = 加权题量 × 5`,
-    maxScores.every((d) => d.max > 0),
+    `[${cfg.label}] 五维区间按题型的量表上限加权`,
+    maxScores.every((d) => d.max > d.min && d.raw === d.max),
     maxScores.map((d) => `${d.raw}/${d.max}`).join(' '),
   );
   check(
@@ -339,8 +390,8 @@ check(
 );
 
 /* 11. 反向计分 */
-const reverseQuestion = BANKS.dominance.find((q) => q.direction === 'reverse');
-const forwardQuestion = BANKS.dominance.find((q) => q.direction === 'forward');
+const reverseQuestion = LIKERT_BANKS.dominance.find((q) => q.direction === 'reverse');
+const forwardQuestion = LIKERT_BANKS.dominance.find((q) => q.direction === 'forward');
 check(
   '反向题按 6 - 值 计分',
   Boolean(reverseQuestion) && scoreOf(reverseQuestion!, 5) === 1 && scoreOf(reverseQuestion!, 1) === 5,

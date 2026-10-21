@@ -28,6 +28,18 @@ function clamp(value: number, min: number, max: number): number {
 export const isAnswerValue = (value: unknown): value is AnswerValue =>
   value === 1 || value === 2 || value === 3 || value === 4 || value === 5;
 
+/** 题目的量表区间：情景四选一 1~4，五点量表 1~5 */
+export function answerRange(question: Question): { min: number; max: number } {
+  return question.format === 'scenario' ? { min: 1, max: 4 } : { min: 1, max: 5 };
+}
+
+/** 该题的答案是否落在它自己的量表区间内 */
+export function isAnswerFor(question: Question, value: unknown): value is AnswerValue {
+  if (typeof value !== 'number' || !Number.isInteger(value)) return false;
+  const { min, max } = answerRange(question);
+  return value >= min && value <= max;
+}
+
 /** 过滤掉旧版本（A/B/C/D）或非法值，只保留 1~5 */
 export function normalizeAnswers(input: Record<string, unknown> | undefined | null): AnswerMap {
   const out: AnswerMap = {};
@@ -40,22 +52,24 @@ export function normalizeAnswers(input: Record<string, unknown> | undefined | nu
   return out;
 }
 
-/** 方向校正后的题目得分：正向直接取值，反向取 6 - 值 */
+/** 方向校正后的题目得分：正向直接取值，反向按该题量表上限翻转 */
 export function scoreOf(question: Question, value: AnswerValue): number {
-  return question.direction === 'reverse' ? 6 - value : value;
+  const { max } = answerRange(question);
+  return question.direction === 'reverse' ? max + 1 - value : value;
 }
 
 /** 当前试卷下已作答数量 */
 export function answeredCount(answers: AnswerMap, mode: QuizMode = DEFAULT_MODE): number {
-  return QUESTIONS_BY_MODE[mode].filter((question) => isAnswerValue(answers[question.id])).length;
+  return QUESTIONS_BY_MODE[mode].filter((question) => isAnswerFor(question, answers[question.id]))
+    .length;
 }
 
 /** 当前试卷是否已全部作答 */
 export function isComplete(answers: AnswerMap, mode: QuizMode = DEFAULT_MODE): boolean {
-  return QUESTIONS_BY_MODE[mode].every((question) => isAnswerValue(answers[question.id]));
+  return QUESTIONS_BY_MODE[mode].every((question) => isAnswerFor(question, answers[question.id]));
 }
 
-/** 汇总五维得分：加权原始分 / 该维度理论满分 */
+/** 汇总五维得分：按每道题各自的量表区间做加权归一化 */
 export function scoreDimensions(
   answers: AnswerMap,
   mode: QuizMode = DEFAULT_MODE,
@@ -69,10 +83,11 @@ export function scoreDimensions(
     let min = 0;
 
     questions.forEach((question) => {
-      max += 5 * question.weight;
-      min += 1 * question.weight;
+      const range = answerRange(question);
+      max += range.max * question.weight;
+      min += range.min * question.weight;
       const value = answers[question.id];
-      if (!isAnswerValue(value)) return;
+      if (!isAnswerFor(question, value)) return;
       raw += scoreOf(question, value) * question.weight;
     });
 
@@ -111,7 +126,7 @@ export function countInconsistent(
     const [a, b] = list;
     const va = answers[a.id];
     const vb = answers[b.id];
-    if (!isAnswerValue(va) || !isAnswerValue(vb)) return;
+    if (!isAnswerFor(a, va) || !isAnswerFor(b, vb)) return;
     total += 1;
     if (Math.abs(scoreOf(a, va) - scoreOf(b, vb)) >= INCONSISTENCY_GAP) count += 1;
   });

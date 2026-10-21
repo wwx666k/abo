@@ -68,6 +68,7 @@ export const onRequestPost = async ({ request, env }: { request: Request; env: E
   const record = {
     username,
     updatedAt: Date.now(),
+    paperVersion: Number(body.paperVersion) || 0,
     mode,
     progress: progress
       ? {

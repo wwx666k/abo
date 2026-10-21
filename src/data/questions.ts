@@ -1,15 +1,16 @@
-import type { Dimension, Question, QuizMode } from '@/types';
+import type { Dimension, OptionKey, Question, QuizMode } from '@/types';
 import { hashString, mulberry32, shuffle } from '@/utils/random';
+import { SCENARIO_RAW } from './scenarioBank';
 
 export type { QuizMode };
 
 /**
- * 题库基底参考 IPIP-NEO（大五人格）与 SDO（社会支配倾向）的经典条目结构改写：
- * - 五个维度各 28 道计分题（共 140 道），正向 / 反向混合
- * - 6 组测谎题对（12 道），不计分，只用于一致性校验
- * - 8 道填充题，不计分，用于稀释作答节奏
- * - 五点量表，反向题按 6 - 答案 计分，每题乘以权重后汇总
+ * 混合题型题库：
+ * - 五点量表：五个维度各 28 道（共 140 道），参考 IPIP-NEO 与 SDO 的条目结构改写，正向 / 反向混合
+ * - 情景四选一：五个维度各 24 道（共 120 道），选项按维度强度由低到高排列，A=1 / B=2 / C=3 / D=4
+ * - 6 组测谎题对（12 道）+ 8 道填充题，均为五点量表，不计分
  *
+ * 每个档位的试卷同时包含两种题型；计分时按各自量表区间（情景 1~4、量表 1~5）归一化。
  * 抽题是确定性的：同一档位永远得到同一份试卷，因此刷新、换设备续答都不会串题。
  */
 
@@ -46,30 +47,36 @@ export const LIKERT_OPTIONS: { value: 1 | 2 | 3 | 4 | 5; label: string; short: s
 export interface ModeConfig {
   key: QuizMode;
   label: string;
-  /** 每个维度抽取的计分题数 */
+  /** 每个维度抽取的计分题总数（情景 + 量表） */
   perDim: number;
+  /** 每个维度抽取的情景四选一题数 */
+  scenarioPerDim: number;
+  /** 每个维度抽取的五点量表题数 */
+  likertPerDim: number;
   total: number;
   minutes: number;
   /** 测谎题对数量（每对 2 题） */
   liePairs: number;
   /** 填充题数量 */
   fillers: number;
-  /** 每个维度至少包含的高权重题数 */
+  /** 每个维度至少包含的高权重量表题数 */
   highPerDim: number;
   /** 仅这些维度保留高权重题；不填则全部维度生效 */
   highOnly?: Dimension[];
 }
 
 /**
- * 25 = 5×4 计分 + 2 组测谎(4) + 1 填充
- * 50 = 5×8 计分 + 4 组测谎(8) + 2 填充
- * 100 = 5×18 计分 + 5 组测谎(10)
+ * 25 = 5×(2 情景 + 2 量表) + 2 组测谎(4) + 1 填充
+ * 50 = 5×(4 情景 + 4 量表) + 4 组测谎(8) + 2 填充
+ * 100 = 5×(9 情景 + 9 量表) + 5 组测谎(10)
  */
 export const QUIZ_MODES: ModeConfig[] = [
   {
     key: 'quick',
     label: '快速',
     perDim: 4,
+    scenarioPerDim: 2,
+    likertPerDim: 2,
     total: 25,
     minutes: 2,
     liePairs: 2,
@@ -81,6 +88,8 @@ export const QUIZ_MODES: ModeConfig[] = [
     key: 'normal',
     label: '常规',
     perDim: 8,
+    scenarioPerDim: 4,
+    likertPerDim: 4,
     total: 50,
     minutes: 5,
     liePairs: 4,
@@ -91,6 +100,8 @@ export const QUIZ_MODES: ModeConfig[] = [
     key: 'detail',
     label: '详细',
     perDim: 18,
+    scenarioPerDim: 9,
+    likertPerDim: 9,
     total: 100,
     minutes: 12,
     liePairs: 5,
@@ -287,17 +298,53 @@ function buildBank(dimension: Dimension): Question[] {
     index: 0,
     text,
     kind: dimension,
+    format: 'likert',
     direction: direction === 'r' ? 'reverse' : 'forward',
     weight: weight ?? 1,
   }));
 }
 
-export const BANKS: Record<Dimension, Question[]> = {
+export const LIKERT_BANKS: Record<Dimension, Question[]> = {
   dominance: buildBank('dominance'),
   emotion: buildBank('emotion'),
   boundary: buildBank('boundary'),
   attraction: buildBank('attraction'),
   stability: buildBank('stability'),
+};
+
+const SCENARIO_PREFIX: Record<Dimension, string> = {
+  dominance: 'ds',
+  emotion: 'es',
+  boundary: 'bs',
+  attraction: 'as',
+  stability: 'ss',
+};
+
+const OPTION_KEYS: OptionKey[] = ['A', 'B', 'C', 'D'];
+
+function buildScenarioBank(dimension: Dimension): Question[] {
+  return SCENARIO_RAW[dimension].map(([text, optionTexts], i) => ({
+    id: `${SCENARIO_PREFIX[dimension]}${String(i + 1).padStart(2, '0')}`,
+    index: 0,
+    text,
+    kind: dimension,
+    format: 'scenario',
+    options: optionTexts.map((optionText, idx) => ({
+      key: OPTION_KEYS[idx],
+      text: optionText,
+      value: (idx + 1) as 1 | 2 | 3 | 4,
+    })),
+    direction: 'forward',
+    weight: 1,
+  }));
+}
+
+export const SCENARIO_BANKS: Record<Dimension, Question[]> = {
+  dominance: buildScenarioBank('dominance'),
+  emotion: buildScenarioBank('emotion'),
+  boundary: buildScenarioBank('boundary'),
+  attraction: buildScenarioBank('attraction'),
+  stability: buildScenarioBank('stability'),
 };
 
 /** 测谎题对：A 为正向表述，B 为反向表述，两题语义相反 */
@@ -316,6 +363,7 @@ export const LIE_PAIRS: Question[][] = LIE_RAW.map(({ id, a, b }) => [
     index: 0,
     text: a,
     kind: 'lie',
+    format: 'likert',
     direction: 'forward',
     weight: 0,
     liePairId: id,
@@ -325,6 +373,7 @@ export const LIE_PAIRS: Question[][] = LIE_RAW.map(({ id, a, b }) => [
     index: 0,
     text: b,
     kind: 'lie',
+    format: 'likert',
     direction: 'reverse',
     weight: 0,
     liePairId: id,
@@ -347,11 +396,15 @@ export const FILLERS: Question[] = FILLER_TEXT.map((text, i) => ({
   index: 0,
   text,
   kind: 'filler',
+  format: 'likert',
   direction: 'forward',
   weight: 0,
 }));
 
 const PAPER_SEED = 20261021;
+
+/** 试卷结构版本：题型或配额调整时递增，用于作废旧进度 */
+export const PAPER_VERSION = 2;
 
 /** 测谎题位置：均匀铺开并加轻微抖动，保证同一对两题至少相隔 5 题 */
 function placeLiePositions(total: number, count: number, rng: () => number): number[] {
@@ -374,27 +427,36 @@ function buildPaper(mode: QuizMode): Question[] {
   const scored: Question[] = [];
 
   DIMENSIONS.forEach((dimension) => {
-    const bank = BANKS[dimension];
+    const scenarioPool = SCENARIO_BANKS[dimension];
+    const likertPool = LIKERT_BANKS[dimension];
     const highQuota = cfg.highOnly && !cfg.highOnly.includes(dimension) ? 0 : cfg.highPerDim;
-    const highPool = bank.filter((q) => q.weight > 1);
-    const plainPool = bank.filter((q) => q.weight === 1);
+    const highPool = likertPool.filter((q) => q.weight > 1);
+    const plainPool = likertPool.filter((q) => q.weight === 1);
 
-    if (bank.length < cfg.perDim) {
-      throw new Error(`[${mode}] ${dimension} 题库不足：需要 ${cfg.perDim} 题，实际 ${bank.length} 题`);
+    if (scenarioPool.length < cfg.scenarioPerDim) {
+      throw new Error(
+        `[${mode}] ${dimension} 情景题不足：需要 ${cfg.scenarioPerDim} 题，实际 ${scenarioPool.length} 题`,
+      );
+    }
+    if (likertPool.length < cfg.likertPerDim) {
+      throw new Error(
+        `[${mode}] ${dimension} 量表题不足：需要 ${cfg.likertPerDim} 题，实际 ${likertPool.length} 题`,
+      );
     }
     if (highPool.length < highQuota) {
       throw new Error(
         `[${mode}] ${dimension} 高权重题不足：需要 ${highQuota} 题，实际 ${highPool.length} 题`,
       );
     }
-    if (plainPool.length < cfg.perDim - highQuota) {
+    if (plainPool.length < cfg.likertPerDim - highQuota) {
       throw new Error(
-        `[${mode}] ${dimension} 普通题不足：需要 ${cfg.perDim - highQuota} 题，实际 ${plainPool.length} 题`,
+        `[${mode}] ${dimension} 普通题不足：需要 ${cfg.likertPerDim - highQuota} 题，实际 ${plainPool.length} 题`,
       );
     }
 
+    scored.push(...shuffle(scenarioPool, rng).slice(0, cfg.scenarioPerDim));
     scored.push(...shuffle(highPool, rng).slice(0, highQuota));
-    scored.push(...shuffle(plainPool, rng).slice(0, cfg.perDim - highQuota));
+    scored.push(...shuffle(plainPool, rng).slice(0, cfg.likertPerDim - highQuota));
   });
 
   const pairs = shuffle(LIE_PAIRS, rng).slice(0, cfg.liePairs);

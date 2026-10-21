@@ -129,43 +129,83 @@ export default function Quiz() {
           className="w-full"
         >
           <div className="card-surface p-5">
-            <p className="text-[16.5px] font-semibold leading-[1.7] tracking-wide text-ink-900">
+            <span className="text-[10.5px] font-semibold tracking-[0.18em] text-brand-violet/70">
+              {question.format === 'scenario' ? '情景选择' : '程度评价'}
+            </span>
+            <p className="mt-1.5 text-[16.5px] font-semibold leading-[1.7] tracking-wide text-ink-900">
               {question.text}
             </p>
 
-            <div className="mt-7 flex items-start justify-between gap-1">
-              {LIKERT_OPTIONS.map((option) => {
-                const isSelected = selected === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => handleSelect(option.value)}
-                    className="flex flex-1 flex-col items-center gap-2"
-                    aria-label={option.label}
-                  >
-                    <motion.span
-                      animate={isSelected ? { scale: [1, 1.14, 1] } : { scale: 1 }}
-                      transition={{ duration: 0.24 }}
-                      className={`flex h-11 w-11 items-center justify-center rounded-full border text-[14px] font-bold transition-colors duration-200 ${
+            {question.format === 'scenario' ? (
+              <div className="mt-5 flex flex-col gap-2.5">
+                {(question.options ?? []).map((option) => {
+                  const isSelected = selected === option.value;
+                  return (
+                    <button
+                      key={option.key}
+                      type="button"
+                      onClick={() => handleSelect(option.value)}
+                      className={`flex w-full items-start gap-3 rounded-2xl border px-3.5 py-3 text-left transition-colors duration-200 ${
                         isSelected
-                          ? 'border-transparent bg-gradient-to-br from-brand-violet to-brand-purple text-white shadow-option'
-                          : 'border-black/[0.08] bg-white/85 text-ink-400'
+                          ? 'border-brand-violet/55 bg-brand-violet/[0.08] shadow-option'
+                          : 'border-black/[0.07] bg-white/85'
                       }`}
                     >
-                      {option.value}
-                    </motion.span>
-                    <span
-                      className={`whitespace-nowrap text-[10.5px] leading-none ${
-                        isSelected ? 'font-semibold text-brand-violet' : 'text-ink-400'
-                      }`}
+                      <span
+                        className={`mt-[1px] flex h-7 w-7 shrink-0 items-center justify-center rounded-full border text-[12px] font-bold transition-colors duration-200 ${
+                          isSelected
+                            ? 'border-transparent bg-gradient-to-br from-brand-violet to-brand-purple text-white'
+                            : 'border-black/[0.08] bg-white text-ink-400'
+                        }`}
+                      >
+                        {option.key}
+                      </span>
+                      <span
+                        className={`flex-1 text-[14px] leading-[1.6] ${
+                          isSelected ? 'font-semibold text-brand-violet' : 'text-ink-700'
+                        }`}
+                      >
+                        {option.text}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="mt-7 flex items-start justify-between gap-1">
+                {LIKERT_OPTIONS.map((option) => {
+                  const isSelected = selected === option.value;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      onClick={() => handleSelect(option.value)}
+                      className="flex flex-1 flex-col items-center gap-2"
+                      aria-label={option.label}
                     >
-                      {option.short}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
+                      <motion.span
+                        animate={isSelected ? { scale: [1, 1.14, 1] } : { scale: 1 }}
+                        transition={{ duration: 0.24 }}
+                        className={`flex h-11 w-11 items-center justify-center rounded-full border text-[14px] font-bold transition-colors duration-200 ${
+                          isSelected
+                            ? 'border-transparent bg-gradient-to-br from-brand-violet to-brand-purple text-white shadow-option'
+                            : 'border-black/[0.08] bg-white/85 text-ink-400'
+                        }`}
+                      >
+                        {option.value}
+                      </motion.span>
+                      <span
+                        className={`whitespace-nowrap text-[10.5px] leading-none ${
+                          isSelected ? 'font-semibold text-brand-violet' : 'text-ink-400'
+                        }`}
+                      >
+                        {option.short}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </motion.div>
       </div>
