@@ -14,6 +14,7 @@ import {
   calculateResult,
   countInconsistent,
   getABOProfile,
+  gradeOfScore,
   isComplete,
   normalizeAnswers,
   scoreDimensions,
@@ -303,6 +304,23 @@ profileCases.forEach(({ name, scores, expect }) => {
   check(`身份映射 · ${name}`, getABOProfile(scores) === expect, getABOProfile(scores));
 });
 
+/* 6b. 等级阈值 */
+const gradeCases: [number, string][] = [
+  [100, 'S'],
+  [90, 'S'],
+  [89, 'A'],
+  [80, 'A'],
+  [79, 'B'],
+  [65, 'B'],
+  [64, 'C'],
+  [50, 'C'],
+  [49, 'D'],
+  [0, 'D'],
+];
+gradeCases.forEach(([score, expect]) => {
+  check(`等级 ${score} 分 -> ${expect}`, gradeOfScore(score) === expect, gradeOfScore(score));
+});
+
 /* 7. 端到端：答案 -> 身份 -> 完整报告 */
 const endToEnd: { name: string; plan: Plan; expect: string }[] = [
   {
@@ -342,6 +360,13 @@ endToEnd.forEach(({ name, plan, expect }) => {
     report.populationRate,
   );
   check(`  ${name} 分析段落 >= 3`, report.analysis.length >= 3, String(report.analysis.length));
+  check(
+    `  ${name} 等级已生成且与主导维度分数一致`,
+    Boolean(report.grade) &&
+      report.grade === gradeOfScore(report.gradeScore ?? 0) &&
+      report.dimensions.some((item) => item.score === report.gradeScore),
+    `${report.grade} ${report.gradeScore}`,
+  );
   check(
     `  ${name} 文案占位符已填充`,
     !report.analysis.join('').includes('{') && !report.shareSentence.includes('{'),

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { fetchAdminUsers } from '@/utils/api';
 import { QUIZ_MODES } from '@/data/questions';
+import { gradeOfResult } from '@/utils/calculateResult';
 import type { AdminUser, HistoryEntry } from '@/types';
 
 const modeLabel = (key?: string) => QUIZ_MODES.find((item) => item.key === key)?.label ?? '详细';
@@ -176,6 +177,15 @@ export default function Admin() {
                                 {modeLabel(entry.result.mode)} · {formatTime(entry.at)} · 占比{' '}
                                 {entry.result.populationRate}%
                               </span>
+                            </span>
+                            <span
+                              className="shrink-0 rounded-capsule px-1.5 py-[2px] text-[10.5px] font-black leading-none"
+                              style={{
+                                background: entry.result.theme.accentSoft,
+                                color: entry.result.theme.accentDeep,
+                              }}
+                            >
+                              {gradeOfResult(entry.result)} 级
                             </span>
                             <span className="shrink-0 text-[11.5px] text-ink-500">
                               {entry.result.dimensions

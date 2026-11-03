@@ -2,7 +2,7 @@ import { useNavigate, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { MAX_HISTORY } from '@/utils/api';
 import { useQuizStore } from '@/store/useQuizStore';
-import { answeredCount } from '@/utils/calculateResult';
+import { answeredCount, gradeOfResult } from '@/utils/calculateResult';
 import { QUIZ_MODES } from '@/data/questions';
 
 const modeLabel = (key?: string) => QUIZ_MODES.find((item) => item.key === key)?.label ?? '详细';
@@ -130,6 +130,15 @@ export default function Profile() {
                   {modeLabel(entry.result.mode)} · {formatTime(entry.at)} · 人群占比{' '}
                   {entry.result.populationRate}%
                 </span>
+              </span>
+              <span
+                className="shrink-0 rounded-capsule px-2 py-1 text-[11px] font-black leading-none"
+                style={{
+                  background: entry.result.theme.accentSoft,
+                  color: entry.result.theme.accentDeep,
+                }}
+              >
+                {gradeOfResult(entry.result)} 级
               </span>
               <span className="shrink-0 text-[12px] font-medium text-brand-violet">查看</span>
             </motion.button>

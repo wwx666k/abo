@@ -12,6 +12,7 @@ import type {
   AnswerValue,
   Dimension,
   DimensionScore,
+  Grade,
   Question,
   QuizResult,
 } from '@/types';
@@ -102,6 +103,28 @@ export function scoreDimensions(
       hasHighWeight: questions.some((question) => question.weight > 1),
     };
   });
+}
+
+/** 等级阈值：按主导维度分数评定 */
+export function gradeOfScore(score: number): Grade {
+  if (score >= 90) return 'S';
+  if (score >= 80) return 'A';
+  if (score >= 65) return 'B';
+  if (score >= 50) return 'C';
+  return 'D';
+}
+
+/** 评定等级所用的主导维度分数，旧报告没有字段时按身份映射补算 */
+export function gradeScoreOfResult(result: QuizResult): number {
+  if (result.gradeScore !== undefined) return result.gradeScore;
+  const primary = IDENTITIES[result.identity]?.primary;
+  return result.dimensions.find((item) => item.key === primary)?.score ?? 0;
+}
+
+/** 读取结果等级，旧报告没有 grade 字段时按主导维度分数补算 */
+export function gradeOfResult(result: QuizResult): Grade {
+  if (result.grade) return result.grade;
+  return gradeOfScore(gradeScoreOfResult(result));
 }
 
 /** 测谎题一致性校验 */
@@ -234,6 +257,8 @@ export function calculateResult(answers: AnswerMap, mode: QuizMode = DEFAULT_MOD
     shareSentence: fillTemplate(identity.shareSentence, ctx),
     theme: identity.theme,
     band,
+    grade: gradeOfScore(primaryScore),
+    gradeScore: primaryScore,
     mode,
     inconsistentCount,
     reliabilityFlag: inconsistentCount >= INCONSISTENCY_LIMIT,

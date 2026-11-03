@@ -8,6 +8,9 @@ export type Direction = 'forward' | 'reverse';
 
 export type ScoreBand = 'high' | 'mid' | 'low';
 
+/** 等级：按主导维度强度评定，S 最高 / D 最低 */
+export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
+
 /** 题量档位：快速 25 / 常规 50 / 详细 100 */
 export type QuizMode = 'quick' | 'normal' | 'detail';
 
@@ -119,6 +122,10 @@ export interface QuizResult {
   shareSentence: string;
   theme: IdentityTheme;
   band: ScoreBand;
+  /** 等级：按主导身份维度的分数评定 */
+  grade?: Grade;
+  /** 评定等级时使用的主导维度分数 */
+  gradeScore?: number;
   /** 本次使用的题量档位 */
   mode: QuizMode;
   /** 测谎题判定的不一致次数 */

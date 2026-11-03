@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import RadarChart from '@/components/RadarChart';
 import { AlertIcon, HeartIcon, QuoteIcon, UsersIcon } from '@/components/Icons';
 import { QUIZ_MODES } from '@/data/questions';
+import { gradeOfResult, gradeScoreOfResult } from '@/utils/calculateResult';
 import { useQuizStore } from '@/store/useQuizStore';
 
 interface InfoCardProps {
@@ -46,6 +47,8 @@ export default function Result() {
   }
 
   const theme = result.theme;
+  const grade = gradeOfResult(result);
+  const gradeScore = gradeScoreOfResult(result);
   const themeVars = {
     '--accent': theme.accent,
     '--accent-soft': theme.accentSoft,
@@ -80,15 +83,27 @@ export default function Result() {
 
         <div className="relative p-5">
           <div className="flex items-start justify-between gap-3">
-            <span
-              className="rounded-capsule border px-3.5 py-1 text-[13px] font-semibold tracking-[0.08em]"
-              style={{
-                borderColor: theme.badgeBorder,
-                color: theme.badgeColor,
-                background: 'rgba(255, 255, 255, 0.34)',
-              }}
-            >
-              {result.identity}
+            <span className="flex items-center gap-2">
+              <span
+                className="rounded-capsule border px-3.5 py-1 text-[13px] font-semibold tracking-[0.08em]"
+                style={{
+                  borderColor: theme.badgeBorder,
+                  color: theme.badgeColor,
+                  background: 'rgba(255, 255, 255, 0.34)',
+                }}
+              >
+                {result.identity}
+              </span>
+              <span
+                className="rounded-capsule border px-2.5 py-1 text-[12px] font-black tracking-[0.06em]"
+                style={{
+                  borderColor: theme.badgeBorder,
+                  color: theme.badgeColor,
+                  background: 'rgba(255, 255, 255, 0.52)',
+                }}
+              >
+                {grade} 级
+              </span>
             </span>
 
             <div className="text-right">
@@ -124,6 +139,12 @@ export default function Result() {
             <p className="flex gap-1.5">
               <span className="shrink-0 text-ink-500">气质识别：</span>
               <span className="font-semibold text-ink-700">{result.temperament}</span>
+            </p>
+            <p className="flex gap-1.5">
+              <span className="shrink-0 text-ink-500">身份等级：</span>
+              <span className="font-semibold text-ink-700">
+                {grade} 级 · 主导维度 {gradeScore} 分
+              </span>
             </p>
           </div>
 
