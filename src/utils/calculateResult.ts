@@ -26,8 +26,7 @@ function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
 
-export const isAnswerValue = (value: unknown): value is AnswerValue =>
-  value === 1 || value === 2 || value === 3 || value === 4 || value === 5;
+export { isAnswerValue, normalizeAnswers } from '@/utils/answers';
 
 /** 题目的量表区间：情景四选一 1~4，五点量表 1~5 */
 export function answerRange(question: Question): { min: number; max: number } {
@@ -39,18 +38,6 @@ export function isAnswerFor(question: Question, value: unknown): value is Answer
   if (typeof value !== 'number' || !Number.isInteger(value)) return false;
   const { min, max } = answerRange(question);
   return value >= min && value <= max;
-}
-
-/** 过滤掉旧版本（A/B/C/D）或非法值，只保留 1~5 */
-export function normalizeAnswers(input: Record<string, unknown> | undefined | null): AnswerMap {
-  const out: AnswerMap = {};
-  if (!input) return out;
-  Object.entries(input).forEach(([id, raw]) => {
-    if (typeof raw !== 'number' && typeof raw !== 'string') return;
-    const num = Number(raw);
-    if (isAnswerValue(num)) out[id] = num;
-  });
-  return out;
 }
 
 /** 方向校正后的题目得分：正向直接取值，反向按该题量表上限翻转 */

@@ -95,9 +95,10 @@ export default function Quiz() {
     }
     setGateOpen(false);
     setSubmitting(true);
-    submit();
-    const state = useQuizStore.getState();
-    void saveUser(state.toRecord());
+    void submit().then(() => {
+      const state = useQuizStore.getState();
+      void saveUser(state.toRecord());
+    });
   };
 
   return (

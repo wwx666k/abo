@@ -1,24 +1,12 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
-import {
-  DEFAULT_MODE,
-  DIMENSIONS,
-  DIMENSION_DESC,
-  DIMENSION_LABELS,
-  PAPER_VERSION,
-  QUIZ_MODES,
-} from '@/data/questions';
+import { DIMENSIONS, DIMENSION_DESC, DIMENSION_LABELS } from '@/data/dimensions';
+import { DEFAULT_MODE, PAPER_VERSION, QUIZ_MODES } from '@/data/modes';
 import type { QuizMode } from '@/types';
-import { answeredCount } from '@/utils/calculateResult';
+import { countAnswered } from '@/utils/answers';
 import { loadUser } from '@/utils/api';
 import { useQuizStore } from '@/store/useQuizStore';
 import { SparkIcon } from '@/components/Icons';
-
-const fadeUp = {
-  initial: { opacity: 0, y: 22 },
-  animate: { opacity: 1, y: 0 },
-};
 
 const NAME_PATTERN = /^[\w\u4e00-\u9fa5-]{2,16}$/;
 
@@ -37,9 +25,9 @@ export default function Home() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
-  const done = answeredCount(answers, mode);
-  const hasProgress = done > 0;
   const modeConfig = QUIZ_MODES.find((item) => item.key === mode) ?? QUIZ_MODES[2];
+  const done = countAnswered(answers, modeConfig.total);
+  const hasProgress = done > 0;
 
   const handleMode = (next: QuizMode) => {
     if (next === mode) return;
@@ -60,8 +48,9 @@ export default function Home() {
     setLoading(false);
 
     const recordMode = record.mode ?? DEFAULT_MODE;
+    const recordConfig = QUIZ_MODES.find((item) => item.key === recordMode) ?? QUIZ_MODES[2];
     const validProgress = record.paperVersion === PAPER_VERSION ? record.progress : null;
-    const answered = validProgress ? answeredCount(validProgress.answers, recordMode) : 0;
+    const answered = validProgress ? countAnswered(validProgress.answers, recordConfig.total) : 0;
     if (answered > 0) navigate('/quiz');
     else if (record.history.length > 0) navigate('/me');
     else {
@@ -72,42 +61,32 @@ export default function Home() {
 
   return (
     <div className="mx-auto flex min-h-dvh w-full max-w-[500px] flex-col px-5 pb-10 pt-12">
-      <motion.div
-        {...fadeUp}
-        transition={{ duration: 0.55, ease: 'easeOut' }}
-        className="flex justify-center"
-      >
+      <div className="fade-up flex justify-center">
         <span className="inline-flex items-center gap-1.5 rounded-capsule border border-brand-purple/25 bg-white/60 px-3.5 py-1.5 text-[12px] font-semibold tracking-widest text-brand-violet backdrop-blur">
           <SparkIcon className="h-3.5 w-3.5" />
           信息素档案 · 自选题量
         </span>
-      </motion.div>
+      </div>
 
-      <motion.h1
-        {...fadeUp}
-        transition={{ duration: 0.6, delay: 0.08, ease: 'easeOut' }}
-        className="mt-5 text-center text-[30px] font-black leading-[1.32] tracking-wide text-ink-900"
+      <h1
+        className="fade-up mt-5 text-center text-[30px] font-black leading-[1.32] tracking-wide text-ink-900"
+        style={{ animationDelay: '80ms' }}
       >
         ABO性别身份
         <br />
         与信息素检测
-      </motion.h1>
+      </h1>
 
-      <motion.p
-        {...fadeUp}
-        transition={{ duration: 0.6, delay: 0.16, ease: 'easeOut' }}
-        className="mt-3.5 text-center text-[13.5px] leading-[1.9] text-ink-500"
+      <p
+        className="fade-up mt-3.5 text-center text-[13.5px] leading-[1.9] text-ink-500"
+        style={{ animationDelay: '160ms' }}
       >
         选择题量，解析你的
         <br />
         支配感 · 情绪浓度 · 边界感 · 吸引力 · 稳定值
-      </motion.p>
+      </p>
 
-      <motion.div
-        {...fadeUp}
-        transition={{ duration: 0.6, delay: 0.24, ease: 'easeOut' }}
-        className="mt-6"
-      >
+      <div className="fade-up mt-6" style={{ animationDelay: '240ms' }}>
         <p className="mb-2.5 text-center text-[12px] font-medium tracking-wide text-ink-400">
           题量
         </p>
@@ -148,13 +127,9 @@ export default function Home() {
             切换题量会清空当前进度
           </p>
         )}
-      </motion.div>
+      </div>
 
-      <motion.div
-        {...fadeUp}
-        transition={{ duration: 0.6, delay: 0.3, ease: 'easeOut' }}
-        className="card-glass mt-5 p-4"
-      >
+      <div className="fade-up card-glass mt-5 p-4" style={{ animationDelay: '300ms' }}>
         <div className="flex flex-col gap-3">
           {DIMENSIONS.map((dimension) => (
             <div key={dimension} className="flex items-start gap-3">
@@ -170,13 +145,9 @@ export default function Home() {
             </div>
           ))}
         </div>
-      </motion.div>
+      </div>
 
-      <motion.div
-        {...fadeUp}
-        transition={{ duration: 0.6, delay: 0.36, ease: 'easeOut' }}
-        className="mt-6 flex flex-col gap-3"
-      >
+      <div className="fade-up mt-6 flex flex-col gap-3" style={{ animationDelay: '360ms' }}>
         {!username ? (
           <form
             onSubmit={(event) => {
@@ -236,17 +207,16 @@ export default function Home() {
             </Link>
           </>
         )}
-      </motion.div>
+      </div>
 
-      <motion.p
-        {...fadeUp}
-        transition={{ duration: 0.6, delay: 0.44, ease: 'easeOut' }}
-        className="mt-auto pt-7 text-center text-[11.5px] leading-relaxed text-ink-400"
+      <p
+        className="fade-up mt-auto pt-7 text-center text-[11.5px] leading-relaxed text-ink-400"
+        style={{ animationDelay: '440ms' }}
       >
         无标准答案
         <br />
         仅供娱乐与自我观察，不构成心理学诊断
-      </motion.p>
+      </p>
     </div>
   );
 }

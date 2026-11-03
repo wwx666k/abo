@@ -1,5 +1,4 @@
 import { useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
 import { useLocation } from 'react-router-dom';
 import { CHANGELOG } from '@/data/changelog';
 import { SparkIcon } from '@/components/Icons';
@@ -22,23 +21,15 @@ export default function ChangelogButton() {
         更新日志
       </button>
 
-      <AnimatePresence>
-        {open && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 px-5 py-10 backdrop-blur-sm"
-            onClick={() => setOpen(false)}
+      {open && (
+        <div
+          className="fade-in fixed inset-0 z-50 flex items-center justify-center bg-ink-900/30 px-5 py-10 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+        >
+          <div
+            className="pop-in flex max-h-full w-full max-w-[460px] flex-col overflow-hidden rounded-card bg-white shadow-card"
+            onClick={(event) => event.stopPropagation()}
           >
-            <motion.div
-              initial={{ opacity: 0, y: 24, scale: 0.97 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 16, scale: 0.98 }}
-              transition={{ duration: 0.26, ease: [0.22, 1, 0.36, 1] }}
-              className="flex max-h-full w-full max-w-[460px] flex-col overflow-hidden rounded-card bg-white shadow-card"
-              onClick={(event) => event.stopPropagation()}
-            >
               <div className="flex items-start justify-between gap-3 border-b border-black/[0.06] px-5 py-4">
                 <div>
                   <h2 className="text-[17px] font-black tracking-wide text-ink-900">更新日志</h2>
@@ -79,10 +70,9 @@ export default function ChangelogButton() {
                   </div>
                 ))}
               </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+          </div>
+        </div>
+      )}
     </>
   );
 }

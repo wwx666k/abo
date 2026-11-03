@@ -1,10 +1,16 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { DEFAULT_MODE, PAPER_VERSION, QUESTIONS_BY_MODE } from '@/data/questions';
-import type { QuizMode } from '@/data/questions';
-import { calculateResult, isAnswerFor, normalizeAnswers } from '@/utils/calculateResult';
+import { DEFAULT_MODE, MODE_CONFIG, PAPER_VERSION } from '@/data/modes';
+import { countAnswered, normalizeAnswers } from '@/utils/answers';
 import { MAX_HISTORY } from '@/utils/api';
-import type { AnswerMap, AnswerValue, HistoryEntry, QuizResult, UserRecord } from '@/types';
+import type {
+  AnswerMap,
+  AnswerValue,
+  HistoryEntry,
+  QuizMode,
+  QuizResult,
+  UserRecord,
+} from '@/types';
 
 interface QuizState {
   username: string;
@@ -21,7 +27,7 @@ interface QuizState {
   next: () => void;
   prev: () => void;
   start: () => void;
-  submit: () => QuizResult;
+  submit: () => Promise<QuizResult>;
   reset: () => void;
   hydrate: (record: UserRecord) => void;
   viewResult: (entry: HistoryEntry) => void;
@@ -30,7 +36,7 @@ interface QuizState {
 }
 
 const clampIndex = (index: number, mode: QuizMode) =>
-  Math.min(QUESTIONS_BY_MODE[mode].length - 1, Math.max(0, index));
+  Math.min(MODE_CONFIG[mode].total - 1, Math.max(0, index));
 
 export const useQuizStore = create<QuizState>()(
   persist(
@@ -62,8 +68,10 @@ export const useQuizStore = create<QuizState>()(
 
       start: () => set({ startedAt: Date.now(), currentIndex: 0 }),
 
-      submit: () => {
+      submit: async () => {
         const state = get();
+        // 计算逻辑与题库体量较大，点提交时再动态加载，避免拖慢首屏
+        const { calculateResult } = await import('@/utils/calculateResult');
         const result = calculateResult(state.answers, state.mode);
         const entry: HistoryEntry = {
           id: `${result.finishedAt}-${Math.random().toString(36).slice(2, 8)}`,
@@ -112,9 +120,7 @@ export const useQuizStore = create<QuizState>()(
 
       toRecord: () => {
         const state = get();
-        const answered = QUESTIONS_BY_MODE[state.mode].filter((question) =>
-          isAnswerFor(question, state.answers[question.id]),
-        ).length;
+        const answered = countAnswered(state.answers, MODE_CONFIG[state.mode].total);
         return {
           username: state.username,
           updatedAt: Date.now(),

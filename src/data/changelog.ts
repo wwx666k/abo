@@ -10,6 +10,15 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.2.2',
+    date: '2026-11-03',
+    title: '加载提速',
+    items: [
+      '首屏脚本体积减半，题库与报告文案改为答题时按需加载',
+      '样式内联进页面、补上站点图标，新环境首次打开更快',
+    ],
+  },
+  {
     version: 'v1.2.1',
     date: '2026-11-03',
     title: '等级调整',

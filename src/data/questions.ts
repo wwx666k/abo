@@ -14,26 +14,12 @@ export type { QuizMode };
  * 抽题是确定性的：同一档位永远得到同一份试卷，因此刷新、换设备续答都不会串题。
  */
 
-export const DIMENSIONS: Dimension[] = ['dominance', 'emotion', 'boundary', 'attraction', 'stability'];
+import { DIMENSIONS } from './dimensions';
+import { MODE_CONFIG } from './modes';
 
-export const DIMENSION_LABELS: Record<Dimension, string> = {
-  dominance: '支配感',
-  emotion: '情绪浓度',
-  boundary: '边界感',
-  attraction: '吸引力',
-  stability: '稳定值',
-};
-
-export const DIMENSION_DESC: Record<Dimension, string> = {
-  dominance: '你对局面的掌控欲与主导倾向',
-  emotion: '你的情绪浓度与感受强度',
-  boundary: '你与他人之间的边界强度',
-  attraction: '你的吸引力与关系牵引力',
-  stability: '你的稳定度与长期一致性',
-};
-
-/** 雷达图顶点顺序：支配感(上) → 情绪浓度(右) → 边界感(右下) → 吸引力(左下) → 稳定值(左) */
-export const RADAR_ORDER: Dimension[] = ['dominance', 'emotion', 'boundary', 'attraction', 'stability'];
+export { DIMENSIONS, DIMENSION_DESC, DIMENSION_LABELS, RADAR_ORDER } from './dimensions';
+export type { ModeConfig } from './modes';
+export { DEFAULT_MODE, MODE_CONFIG, PAPER_VERSION, QUIZ_MODES } from './modes';
 
 /** 五点量表 */
 export const LIKERT_OPTIONS: { value: 1 | 2 | 3 | 4 | 5; label: string; short: string }[] = [
@@ -43,80 +29,6 @@ export const LIKERT_OPTIONS: { value: 1 | 2 | 3 | 4 | 5; label: string; short: s
   { value: 4, label: '比较符合', short: '比较符合' },
   { value: 5, label: '完全符合', short: '完全符合' },
 ];
-
-export interface ModeConfig {
-  key: QuizMode;
-  label: string;
-  /** 每个维度抽取的计分题总数（情景 + 量表） */
-  perDim: number;
-  /** 每个维度抽取的情景四选一题数 */
-  scenarioPerDim: number;
-  /** 每个维度抽取的五点量表题数 */
-  likertPerDim: number;
-  total: number;
-  minutes: number;
-  /** 测谎题对数量（每对 2 题） */
-  liePairs: number;
-  /** 填充题数量 */
-  fillers: number;
-  /** 每个维度至少包含的高权重量表题数 */
-  highPerDim: number;
-  /** 仅这些维度保留高权重题；不填则全部维度生效 */
-  highOnly?: Dimension[];
-}
-
-/**
- * 25 = 5×(3 情景 + 1 量表) + 2 组测谎(4) + 1 填充   → 量表 20%
- * 50 = 5×(6 情景 + 2 量表) + 4 组测谎(8) + 2 填充   → 量表 20%
- * 100 = 5×(15 情景 + 3 量表) + 5 组测谎(10)          → 量表 15%
- */
-export const QUIZ_MODES: ModeConfig[] = [
-  {
-    key: 'quick',
-    label: '快速',
-    perDim: 4,
-    scenarioPerDim: 3,
-    likertPerDim: 1,
-    total: 25,
-    minutes: 2,
-    liePairs: 2,
-    fillers: 1,
-    highPerDim: 1,
-    highOnly: ['dominance', 'boundary'],
-  },
-  {
-    key: 'normal',
-    label: '常规',
-    perDim: 8,
-    scenarioPerDim: 6,
-    likertPerDim: 2,
-    total: 50,
-    minutes: 5,
-    liePairs: 4,
-    fillers: 2,
-    highPerDim: 1,
-  },
-  {
-    key: 'detail',
-    label: '详细',
-    perDim: 18,
-    scenarioPerDim: 15,
-    likertPerDim: 3,
-    total: 100,
-    minutes: 12,
-    liePairs: 5,
-    fillers: 0,
-    highPerDim: 2,
-  },
-];
-
-export const MODE_CONFIG: Record<QuizMode, ModeConfig> = {
-  quick: QUIZ_MODES[0],
-  normal: QUIZ_MODES[1],
-  detail: QUIZ_MODES[2],
-};
-
-export const DEFAULT_MODE: QuizMode = 'detail';
 
 /** [题干, 'f' 正向 / 'r' 反向, 权重（缺省 1）] */
 type Raw = [string, 'f' | 'r', number?];
@@ -589,9 +501,6 @@ export const FILLERS: Question[] = FILLER_RAW.map((raw, i) =>
 );
 
 const PAPER_SEED = 20261021;
-
-/** 试卷结构版本：题型或配额调整时递增，用于作废旧进度 */
-export const PAPER_VERSION = 3;
 
 /** 测谎题位置：均匀铺开并加轻微抖动，保证同一对两题至少相隔 5 题 */
 function placeLiePositions(total: number, count: number, rng: () => number): number[] {

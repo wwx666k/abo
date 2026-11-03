@@ -117,7 +117,51 @@
   }
 }
 
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(24px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 @layer utilities {
+  /* 首屏轻量入场动画：纯 CSS 实现，避免为动画引入额外脚本 */
+  .fade-up {
+    animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
+  .fade-in {
+    animation: fade-in 0.2s ease-out both;
+  }
+
+  .pop-in {
+    animation: pop-in 0.26s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+
   .text-gradient {
     background: linear-gradient(100deg, #c4b5fd 0%, #f0abfc 48%, #fda4af 100%);
     -webkit-background-clip: text;
