@@ -59,7 +59,7 @@ scripts/verify.ts   # 题库与算法校验脚本
 
 1. 将仓库连接到 Cloudflare Pages，构建命令 `npm run build`，输出目录 `dist`。
 2. 在 Pages 项目中创建 KV 命名空间，并在 Settings → Functions → KV 绑定中命名为 `ABO_KV`。
-3. 在环境变量中设置后台密码 `ADMIN_PASSWORD`（未设置时使用代码内的默认值）。
+3. 在环境变量中设置后台密码 `ADMIN_PASSWORD`。
 4. 推送 `main` 分支后会自动构建部署；`functions/api/*` 会作为 Pages Functions 一起发布。
 
 ## 说明
