@@ -107,6 +107,9 @@ export function scoreDimensions(
 
 /** 等级阈值：按主导维度分数评定 */
 export function gradeOfScore(score: number): Grade {
+  if (score >= 98) return 'SSS+';
+  if (score >= 95) return 'SSS';
+  if (score >= 92) return 'SS';
   if (score >= 90) return 'S';
   if (score >= 80) return 'A';
   if (score >= 65) return 'B';

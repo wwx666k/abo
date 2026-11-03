@@ -336,7 +336,13 @@ profileCases.forEach(({ name, scores, expect }) => {
 
 /* 6b. 等级阈值 */
 const gradeCases: [number, string][] = [
-  [100, 'S'],
+  [100, 'SSS+'],
+  [98, 'SSS+'],
+  [97, 'SSS'],
+  [95, 'SSS'],
+  [94, 'SS'],
+  [92, 'SS'],
+  [91, 'S'],
   [90, 'S'],
   [89, 'A'],
   [80, 'A'],

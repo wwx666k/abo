@@ -10,6 +10,15 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
+    version: 'v1.2.0',
+    date: '2026-11-03',
+    title: '等级细化',
+    items: [
+      '在 S 级以上新增 SS、SSS、SSS+ 三档，主导维度 92 / 95 / 98 分起依次评定',
+      '结果页、个人中心与后台同步展示新等级',
+    ],
+  },
+  {
     version: 'v1.1.0',
     date: '2026-11-03',
     title: '题库与体验升级',

@@ -8,8 +8,8 @@ export type Direction = 'forward' | 'reverse';
 
 export type ScoreBand = 'high' | 'mid' | 'low';
 
-/** 等级：按主导维度强度评定，S 最高 / D 最低 */
-export type Grade = 'S' | 'A' | 'B' | 'C' | 'D';
+/** 等级：按主导维度强度评定，SSS+ 最高 / D 最低 */
+export type Grade = 'SSS+' | 'SSS' | 'SS' | 'S' | 'A' | 'B' | 'C' | 'D';
 
 /** 题量档位：快速 25 / 常规 50 / 详细 100 */
 export type QuizMode = 'quick' | 'normal' | 'detail';
