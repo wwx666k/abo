@@ -10,12 +10,12 @@ export interface ChangelogEntry {
  */
 export const CHANGELOG: ChangelogEntry[] = [
   {
-    version: 'v1.2.0',
+    version: 'v1.2.1',
     date: '2026-11-03',
-    title: '等级细化',
+    title: '等级调整',
     items: [
-      '在 S 级以上新增 SS、SSS、SSS+ 三档，主导维度 92 / 95 / 98 分起依次评定',
-      '结果页、个人中心与后台同步展示新等级',
+      '等级恢复为 S / A / B / C / D 五档，主导维度 90 / 80 / 65 / 50 分起依次评定',
+      '结果页、个人中心与后台的历史记录统一按当前档位显示',
     ],
   },
   {

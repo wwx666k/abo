@@ -107,9 +107,6 @@ export function scoreDimensions(
 
 /** 等级阈值：按主导维度分数评定 */
 export function gradeOfScore(score: number): Grade {
-  if (score >= 98) return 'SSS+';
-  if (score >= 95) return 'SSS';
-  if (score >= 92) return 'SS';
   if (score >= 90) return 'S';
   if (score >= 80) return 'A';
   if (score >= 65) return 'B';
@@ -124,9 +121,8 @@ export function gradeScoreOfResult(result: QuizResult): number {
   return result.dimensions.find((item) => item.key === primary)?.score ?? 0;
 }
 
-/** 读取结果等级，旧报告没有 grade 字段时按主导维度分数补算 */
+/** 读取结果等级：始终按主导维度分数评定，避免旧报告残留已取消的等级 */
 export function gradeOfResult(result: QuizResult): Grade {
-  if (result.grade) return result.grade;
   return gradeOfScore(gradeScoreOfResult(result));
 }
 
